@@ -6,8 +6,9 @@ def graph_generation(
         p: float = 0.5,
         seed: int | None = None, 
         weighted: bool = False,
-        connected: bool = True, 
-        self_loop: bool =True
+        connected: bool = True, # unused for now
+        self_loop: bool = True,
+        weight_range: float = 1.0
 ) -> Graph:
 
     if seed is not None:
@@ -20,7 +21,7 @@ def graph_generation(
             if random.random() < p:
                 w = 1.
                 if weighted:
-                    w = random.uniform(0, 2)
+                    w = random.uniform(0, weight_range)
                 adj[i].append((j, w))
                 adj[j].append((i, w))
 

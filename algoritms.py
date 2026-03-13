@@ -1,13 +1,14 @@
-import graph
+from graph import Graph
 
 """
 Algorithms to learn:
 
 - BFS
 - Bellman-Ford
+- DFS: ongoing
 """
 
-def bfs_states(source, graph):
+def compute_bfs_states(source: int, graph: Graph) -> list:
     state = [0.] * graph.num_nodes
     state[source] = 1.
 
@@ -29,7 +30,7 @@ def bfs_states(source, graph):
 
     return states
 
-def bellman_ford_states(source, graph):
+def compute_bellman_ford_states(source:int , graph: Graph) -> list:
 
     n = graph.num_nodes
 
@@ -53,7 +54,7 @@ def bellman_ford_states(source, graph):
     return states
 
 
-def dfs_states(source, graph):
+def compute_dfs_states(source:int , graph: Graph) -> list:
 
     state = [0.] * graph.num_nodes
     state[source] = 1.
@@ -78,10 +79,10 @@ def dfs_states(source, graph):
 
     return states
 
-def generate_examples(graph, states):
+def generate_examples(algo: str, graph: Graph, states: list) -> list:
     data = []
     for i in range(len(states) - 1):
-        data.append((graph, states[i], states[i + 1]))
+        data.append((algo, graph, states[i], states[i + 1]))
     return data
 
 if __name__ == "__main__":
@@ -95,10 +96,10 @@ if __name__ == "__main__":
         [(4, 1.0), (2, 1.0)]
     ]
 
-    g = graph.Graph(5, adj)
+    g = Graph(5, adj)
     print(g)
 
-    states = bfs_states(0, g)
+    states = compute_bfs_states(0, g)
     ite = 1
     for state in states:
         print(f"{ite} - {state}")
@@ -107,7 +108,7 @@ if __name__ == "__main__":
     print()
 
     ## Bellman-Ford
-    states = bellman_ford_states(0, g)
+    states = compute_bellman_ford_states(0, g)
     ite = 1
     for state in states:
         print(f"{ite} - {state}")

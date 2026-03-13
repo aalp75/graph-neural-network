@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from graph import Graph
+
 class EncoderBFS(nn.Module):
     def __init__(self, in_dim: int, hidden_dim: int):
         super().__init__()
@@ -60,7 +62,7 @@ class Processor(nn.Module):
         for u in range(n):
             for v, w in g.adj[u]:
                 weight_tensor = torch.tensor([w], device=device, dtype=dtype)
-                msg_input = torch.cat([h[u], h[v], weight_tensor], dim=0)   # shape (d + 1,)
+                msg_input = torch.cat([h[u], h[v], weight_tensor], dim=0)
                 msg = self.message(msg_input)
                 incoming[v].append(msg)
 
@@ -79,26 +81,34 @@ class Processor(nn.Module):
                         
 
 class Model(nn.Module):
-    def __init__(self, algo: str, in_dim: int, hidden_dim: int, out_dim: int):
+    def __init__(self, in_dim: int, hidden_dim: int, out_dim: int):
         super().__init__()
 
-        if algo == 'BFS':
-            self.encoder = EncoderBFS(in_dim, hidden_dim)
-            self.decoder = DecoderBFS(hidden_dim, out_dim)
-        elif algo == 'BF':
-            self.encoder = EncoderBF(in_dim, hidden_dim)
-            self.decoder = DecoderBF(hidden_dim, out_dim)
-        else:
-            raise ValueError(f"Unknown algorithm: {algo}")
+        # encoder
+        self.encoder_bfs = EncoderBFS(in_dim, hidden_dim)
+        self.decoder_bfs = DecoderBFS(hidden_dim, out_dim)
+        
+        # decoder
+        self.encoder_bf = EncoderBF(in_dim, hidden_dim)
+        self.decoder_bf = DecoderBF(hidden_dim, out_dim)
 
+        # shared processor
         self.processor = Processor(hidden_dim)
 
-    def forward(self, g, x):
-        h = self.encoder(x)
+    def forward(self, algo: str, g: Graph, x):
+        if algo == 'BFS':
+            h = self.encoder_bfs(x)
+        elif algo == 'BF':
+            h = self.encoder_bf(x)
+
         h = self.processor(g, h)
-        y = self.decoder(h)
+
+        if algo == 'BFS':
+            y = self.decoder_bfs(h)
+        elif algo == 'BF':
+            y = self.decoder_bf(h)
 
         return y
     
 if __name__ == "__main__":
-    model = Model('BFS', 1, 32, 1)
+    model = Model(1, 32, 1)
