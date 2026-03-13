@@ -1,13 +1,14 @@
-import graph
+from graph import Graph
 import random
 
 def graph_generation(
         n: int, 
         p: float = 0.5,
         seed: int | None = None, 
+        weighted: bool = False,
         connected: bool = True, 
         self_loop: bool =True
-) -> graph.Graph:
+) -> Graph:
 
     if seed is not None:
         random.seed(seed)
@@ -17,17 +18,20 @@ def graph_generation(
     for i in range(n):
         for j in range(i + 1, n):
             if random.random() < p:
-                adj[i].append(j)
-                adj[j].append(i)
+                w = 1.
+                if weighted:
+                    w = random.uniform(0, 2)
+                adj[i].append((j, w))
+                adj[j].append((i, w))
 
     if self_loop:
         for i in range(n):
-            adj[i].append(i)
+            adj[i].append((i, 0))
 
-    return graph.Graph(n, adj)
+    return Graph(n, adj)
 
 
 if __name__ == "__main__":
-    g = graph_generation(5, 0.5, None, connected=True, self_loop=True)
+    g = graph_generation(5, 0.5, None, weighted=False, connected=True, self_loop=True)
     print(g)
 

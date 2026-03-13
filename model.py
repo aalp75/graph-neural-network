@@ -1,79 +1,104 @@
-import random
 import torch
 import torch.nn as nn
-from graph import Graph
 
-class GNN(nn.Module):
-
-    def __init__(self) -> None:
+class EncoderBFS(nn.Module):
+    def __init__(self, in_dim: int, hidden_dim: int):
         super().__init__()
-        self.linear = nn.Linear(2, 1)
+        self.proj = nn.Linear(in_dim, hidden_dim)
 
-    def forward(self, g, state: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
+        return self.proj(x)
 
-        if state.dim() == 1:
-            state = state.unsqueeze(1)
+class DecoderBFS(nn.Module):
+    def __init__(self, hidden_dim: int, out_dim: int):
+        super().__init__()
+        self.proj = nn.Linear(hidden_dim, out_dim)
 
+    def forward(self, h):
+        return self.proj(h)
+
+class EncoderBF(nn.Module):
+    def __init__(self, in_dim: int, hidden_dim: int):
+        super().__init__()
+        self.proj = nn.Linear(in_dim, hidden_dim)
+
+    def forward(self, x):
+        return self.proj(x)
+
+class DecoderBF(nn.Module):
+    def __init__(self, hidden_dim: int, out_dim: int):
+        super().__init__()
+        self.proj = nn.Linear(hidden_dim, out_dim)
+
+    def forward(self, h):
+        return self.proj(h)
+    
+class Processor(nn.Module):
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+
+        self.message = nn.Sequential(
+            nn.Linear(2 * hidden_dim + 1, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim)
+        )
+
+        self.update = nn.Sequential(
+            nn.Linear(2 * hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim)
+        )
+
+    def forward(self, g, h):
         n = g.num_nodes
-        neighbor_sum = torch.zeros((n, 1), dtype=state.dtype)
+        device = h.device
+        dtype = h.dtype
+        d = h.size(1)
 
-        for node in range(n):
-            for neigh in g.adj[node]:
-                neighbor_sum[node, 0] += state[neigh, 0]
+        incoming = [[] for _ in range(n)]
 
-        x = torch.cat([state, neighbor_sum], dim=1)
+        for u in range(n):
+            for v, w in g.adj[u]:
+                weight_tensor = torch.tensor([w], device=device, dtype=dtype)
+                msg_input = torch.cat([h[u], h[v], weight_tensor], dim=0)   # shape (d + 1,)
+                msg = self.message(msg_input)
+                incoming[v].append(msg)
 
-        return self.linear(x)
+        agg_rows = []
+        for v in range(n):
+            if incoming[v]:
+                agg_v = torch.stack(incoming[v], dim=0).max(dim=0).values
+            else:
+                agg_v = torch.zeros(d, device=device, dtype=dtype)
+            agg_rows.append(agg_v)
 
-    def train_model(
-        self,
-        dataset,
-        epochs: int = 200,
-        lr: float = 0.01
-    ):
+        agg = torch.stack(agg_rows, dim=0)
 
-        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        loss_fn = nn.BCEWithLogitsLoss()
+        h = self.update(torch.cat([h, agg], dim=1))
+        return h
+                        
 
-        for epoch in range(epochs):
+class Model(nn.Module):
+    def __init__(self, algo: str, in_dim: int, hidden_dim: int, out_dim: int):
+        super().__init__()
 
-            total_loss = 0.0
+        if algo == 'BFS':
+            self.encoder = EncoderBFS(in_dim, hidden_dim)
+            self.decoder = DecoderBFS(hidden_dim, out_dim)
+        elif algo == 'BF':
+            self.encoder = EncoderBF(in_dim, hidden_dim)
+            self.decoder = DecoderBF(hidden_dim, out_dim)
+        else:
+            raise ValueError(f"Unknown algorithm: {algo}")
 
-            for g, state, target in dataset:
+        self.processor = Processor(hidden_dim)
 
-                state = torch.tensor(state, dtype=torch.float32)
-                target = torch.tensor(target, dtype=torch.float32).unsqueeze(1)
+    def forward(self, g, x):
+        h = self.encoder(x)
+        h = self.processor(g, h)
+        y = self.decoder(h)
 
-                optimizer.zero_grad()
-
-                logits = self(g, state)
-
-                loss = loss_fn(logits, target)
-
-                loss.backward()
-                optimizer.step()
-
-                total_loss += loss.item()
-
-            if epoch % 20 == 0:
-                print(f"Epoch {epoch} | loss = {total_loss/len(dataset):.6f}")
-
-    def predict_next_state(
-        self,
-        g,
-        state,
-        threshold: float = 0.5
-    ):
-        self.eval()
-
-        state = torch.tensor(state, dtype=torch.float32)
-
-        with torch.no_grad():
-
-            logits = self(g, state)
-
-            probs = torch.sigmoid(logits)
-
-            preds = (probs >= threshold).float()
-
-        return probs.squeeze(1), preds.squeeze(1)
+        return y
+    
+if __name__ == "__main__":
+    model = Model('BFS', 1, 32, 1)
