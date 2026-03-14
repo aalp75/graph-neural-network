@@ -3,46 +3,37 @@ import torch.nn as nn
 
 from graph import Graph
 
-class EncoderBFS(nn.Module):
+
+class Encoder(nn.Module):
     def __init__(self, in_dim: int, hidden_dim: int):
         super().__init__()
-        self.proj = nn.Linear(in_dim, hidden_dim)
+        self.hidden_dim = hidden_dim
+        self.proj = nn.Linear(in_dim + hidden_dim, hidden_dim)
 
-    def forward(self, x):
-        return self.proj(x)
+    def forward(self, x: torch.Tensor, h: torch.Tensor | None = None) -> torch.Tensor:
+        if h is None:
+            n = x.size(0)
+            h = torch.zeros(n, self.hidden_dim, device=x.device, dtype=x.dtype)
 
-class DecoderBFS(nn.Module):
+        inp = torch.cat([x, h], dim=1)
+        return self.proj(inp)
+
+class Decoder(nn.Module):
     def __init__(self, hidden_dim: int, out_dim: int):
         super().__init__()
-        self.proj = nn.Linear(hidden_dim, out_dim)
+        self.hidden_dim = hidden_dim
+        self.proj = nn.Linear(2 * hidden_dim, out_dim)
 
-    def forward(self, h):
-        return self.proj(h)
+    def forward(self, z: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        inp = torch.cat([z, h], dim=1)
+        return self.proj(inp)
 
-class EncoderBF(nn.Module):
-    def __init__(self, in_dim: int, hidden_dim: int):
-        super().__init__()
-        self.proj = nn.Linear(in_dim, hidden_dim)
 
-    def forward(self, x):
-        return self.proj(x)
-
-class DecoderBF(nn.Module):
-    def __init__(self, hidden_dim: int, out_dim: int):
-        super().__init__()
-        self.proj = nn.Linear(hidden_dim, out_dim)
-
-    def forward(self, h):
-        return self.proj(h)
-    
 class Processor(nn.Module):
     def __init__(self, hidden_dim: int):
         super().__init__()
-
         self.message = nn.Sequential(
             nn.Linear(2 * hidden_dim + 1, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim)
         )
 
         self.update = nn.Sequential(
@@ -51,64 +42,61 @@ class Processor(nn.Module):
             nn.Linear(hidden_dim, hidden_dim)
         )
 
-    def forward(self, g, h):
-        n = g.num_nodes
-        device = h.device
-        dtype = h.dtype
-        d = h.size(1)
+    def forward(self, graph: Graph, z: torch.Tensor) -> torch.Tensor:
+        n = graph.num_nodes
+        device = z.device
+        dtype = z.dtype
 
-        incoming = [[] for _ in range(n)]
+        h = [None] * n
 
         for u in range(n):
-            for v, w in g.adj[u]:
-                weight_tensor = torch.tensor([w], device=device, dtype=dtype)
-                msg_input = torch.cat([h[u], h[v], weight_tensor], dim=0)
+            all_messages = []
+            for v, weight in graph.adj[u]:
+                weight_tensor = torch.tensor([weight], device=device, dtype=dtype)
+                msg_input = torch.cat([z[u], z[v], weight_tensor], dim=0)
                 msg = self.message(msg_input)
-                incoming[v].append(msg)
+                all_messages.append(msg)
 
-        agg_rows = []
-        for v in range(n):
-            if incoming[v]:
-                agg_v = torch.stack(incoming[v], dim=0).max(dim=0).values
+            if all_messages:
+                aggregated_msg = torch.stack(all_messages, dim=0).max(dim=0).values
             else:
-                agg_v = torch.zeros(d, device=device, dtype=dtype)
-            agg_rows.append(agg_v)
+                aggregated_msg = torch.zeros_like(z[u])
 
-        agg = torch.stack(agg_rows, dim=0)
+            h[u] = self.update(torch.cat([z[u], aggregated_msg], dim=0))
 
-        h = self.update(torch.cat([h, agg], dim=1))
-        return h
-                        
+        return torch.stack(h, dim=0)
+
 
 class Model(nn.Module):
     def __init__(self, in_dim: int, hidden_dim: int, out_dim: int):
         super().__init__()
 
-        # encoder
-        self.encoder_bfs = EncoderBFS(in_dim, hidden_dim)
-        self.decoder_bfs = DecoderBFS(hidden_dim, out_dim)
-        
-        # decoder
-        self.encoder_bf = EncoderBF(in_dim, hidden_dim)
-        self.decoder_bf = DecoderBF(hidden_dim, out_dim)
+        self.encoder_bfs = Encoder(in_dim, hidden_dim)
+        self.decoder_bfs = Decoder(hidden_dim, out_dim)
 
-        # shared processor
+        self.encoder_bf = Encoder(in_dim, hidden_dim)
+        self.decoder_bf = Decoder(hidden_dim, out_dim)
+
         self.processor = Processor(hidden_dim)
 
-    def forward(self, algo: str, g: Graph, x):
+    def forward(self, algo: str, g: Graph, x: torch.Tensor, h: torch.Tensor | None = None):
         if algo == 'BFS':
-            h = self.encoder_bfs(x)
+            z = self.encoder_bfs(x, h)
         elif algo == 'BF':
-            h = self.encoder_bf(x)
+            z = self.encoder_bf(x, h)
+        else:
+            raise ValueError(f"Unknown algorithm: {algo}")
 
-        h = self.processor(g, h)
+        h = self.processor(g, z)
 
         if algo == 'BFS':
-            y = self.decoder_bfs(h)
-        elif algo == 'BF':
-            y = self.decoder_bf(h)
+            y = self.decoder_bfs(z, h)
+        else:
+            y = self.decoder_bf(z, h)
 
-        return y
-    
+        return y, h
+
+
 if __name__ == "__main__":
     model = Model(1, 32, 1)
+    

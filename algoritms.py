@@ -34,16 +34,15 @@ def compute_bellman_ford_states(source:int , graph: Graph) -> list:
 
     n = graph.num_nodes
 
-    state = [n] * graph.num_nodes # max value is n
-    state[source] = 0.
+    state = [float(n)] * graph.num_nodes # max value is n
+    state[source] = 0.0
 
     states = [state.copy()]
 
     for _ in range(n):
         next_state = state.copy()
         for node in range(graph.num_nodes):
-            for edge in graph.adj[node]:
-                neigh, weight = edge[0], edge[1]
+            for neigh, weight in graph.adj[node]:
                 next_state[neigh] = min(next_state[neigh], state[node] + weight)
                     
         if next_state == state:

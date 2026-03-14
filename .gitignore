@@ -3,3 +3,5 @@
 __pycache__/
 data/
 references/
+# pre trained model
+parameters/ 
