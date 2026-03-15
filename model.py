@@ -27,6 +27,23 @@ class Decoder(nn.Module):
     def forward(self, z: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
         inp = torch.cat([z, h], dim=1)
         return self.proj(inp)
+    
+class Predecessor(nn.Module):
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+        self.proj = nn.Linear(2 * hidden_dim + 1, 1)
+
+    def forward(self, h:torch.Tensor, graph:Graph):
+        pred_scores = []
+        for node in range(graph.num_nodes):
+            scores = [torch.zeros(1, device=h.device, dtype=h.dtype) for _ in range(graph.num_nodes)]
+            for neigh, weight in graph.adj[node]:
+                weight_tensor = torch.tensor([weight], device=h.device, dtype=h.dtype)
+                scores[neigh] = self.proj(torch.cat([h[node], h[neigh], weight_tensor]))
+            
+            pred_scores.append(torch.cat(scores))
+
+        return pred_scores
 
 
 class Processor(nn.Module):
@@ -71,31 +88,50 @@ class Model(nn.Module):
     def __init__(self, in_dim: int, hidden_dim: int, out_dim: int):
         super().__init__()
 
+        self.hidden_dim = hidden_dim
+
         self.encoder_bfs = Encoder(in_dim, hidden_dim)
         self.decoder_bfs = Decoder(hidden_dim, out_dim)
 
         self.encoder_bf = Encoder(in_dim, hidden_dim)
         self.decoder_bf = Decoder(hidden_dim, out_dim)
 
+        self.encoder_prim = Encoder(in_dim, hidden_dim)
+        self.decoder_prim = Decoder(hidden_dim, out_dim)
+
+        self.predecessor = Predecessor(hidden_dim)
+
         self.processor = Processor(hidden_dim)
 
-    def forward(self, algo: str, g: Graph, x: torch.Tensor, h: torch.Tensor | None = None):
+    def forward(self, 
+                algo: str, 
+                graph: Graph, 
+                x: torch.Tensor, 
+                h: torch.Tensor | None = None
+    ):
         if algo == 'BFS':
             z = self.encoder_bfs(x, h)
         elif algo == 'BF':
             z = self.encoder_bf(x, h)
+        elif algo == 'PRIM':
+            z = self.encoder_prim(x, h)
         else:
             raise ValueError(f"Unknown algorithm: {algo}")
 
-        h = self.processor(g, z)
+        h = self.processor(graph, z)
 
         if algo == 'BFS':
             y = self.decoder_bfs(z, h)
-        else:
+        elif algo == 'BF':
             y = self.decoder_bf(z, h)
+            pred_scores = self.predecessor(h, graph)
+            y = [y, pred_scores]
+        elif algo == 'PRIM':
+            y = self.decoder_prim(z, h)
+            pred_scores = self.predecessor(h, graph)
+            y = [y, pred_scores]
 
         return y, h
-
 
 if __name__ == "__main__":
     model = Model(1, 32, 1)
