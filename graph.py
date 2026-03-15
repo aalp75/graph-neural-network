@@ -11,7 +11,8 @@ class Graph:
 
     def add_edge(self, u: int, v: int, w: float = 1.0) -> None:
         self.adj[u].append((v, w))
-        self.adj[v].append((u, w))
+        if u != v:
+            self.adj[v].append((u, w))
 
     def __repr__(self) -> str:
         return f"Graph(num_nodes={self.num_nodes}, adj={self.adj})"
