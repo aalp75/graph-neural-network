@@ -197,26 +197,26 @@ def compute_dijkstra_states(graph: Graph, source: int) -> tuple:
 def compute_states(algo: str, graph: Graph, source: int):
     match algo:
         case 'BFS':
-            return compute_bfs_states(source, graph), None, None
+            return compute_bfs_states(graph, source), None, None
         case 'DFS':
-            return compute_dfs_states(source, graph), None, None
+            return compute_dfs_states(graph, source), None, None
         case 'BF':
-            states, preds, inf = compute_bf_states(source, graph)
+            states, preds, inf = compute_bf_states(graph, source)
             return states, preds, inf
         case 'PRIM':
-            states, preds = compute_prim_states(source, graph)
+            states, preds = compute_prim_states(graph, source)
             return states, preds, None
         case 'Dijkstra':
-            states, preds, inf = compute_dijkstra_states(source, graph)
+            states, preds, inf = compute_dijkstra_states(graph, source)
             return states, preds, inf
         case _:
             raise ValueError(f"Unknown algorithm: {algo}")
 
-def generate_examples(algo: str, graph: Graph, states: list, parents: list | None = None) -> list:
+def generate_examples(states: list, parents: list | None = None) -> list:
     data = []
     for i in range(len(states) - 1):
         parent = None if parents is None else parents[i + 1]
-        data.append((algo, graph, states[i], states[i + 1], parent))
+        data.append((states[i], states[i + 1], parent))
     return data
 
 if __name__ == "__main__":
@@ -234,7 +234,7 @@ if __name__ == "__main__":
     print(g)
 
     print("\n-- Breadth First Search --")
-    states = compute_bfs_states(0, g)
+    states = compute_bfs_states(g, 0)
     ite = 1
     for state in states:
         print(f"{ite} - {state}")
@@ -244,7 +244,7 @@ if __name__ == "__main__":
 
     ## Bellman-Ford
     print("\n-- Bellman-Ford --")
-    states, predecessors, inf = compute_bf_states(0, g)
+    states, predecessors, inf = compute_bf_states(g, 0)
     ite = 1
     for state in states:
         print(f"{ite} - {state}")
@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
     # Prim
     print("\n-- Prim --")
-    states, preds = compute_prim_states(0, g)
+    states, preds = compute_prim_states(g, 0)
     ite = 1
     for state in states:
         print(f"{ite} - {state}")
@@ -260,7 +260,7 @@ if __name__ == "__main__":
 
     # Dijkstra
     print("\n-- Dijkstra --")
-    states, preds, inf = compute_dijkstra_states(0, g)
+    states, preds, inf = compute_dijkstra_states(g, 0)
     ite = 1
     for state in states:
         print(f"{ite} - {state}")

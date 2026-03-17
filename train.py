@@ -25,7 +25,14 @@ def termination_bce(term_pred, term_true, num_steps):
     pos_weight = torch.tensor(float(num_steps - 1), device=term_pred.device)
     return nn.BCEWithLogitsLoss(pos_weight=pos_weight)(term_pred, term_true)
 
-def compute_loss(algo, y_pred, y_true, p_pred, p_true, term_pred, term_true, reachable, num_steps, device):
+def compute_loss(algo, 
+                 y_pred, y_true, 
+                 p_pred, p_true, 
+                 term_pred, term_true, 
+                 reachable: list,
+                 num_steps: int,
+                 device
+):
     match algo:
         case 'BFS' | 'DFS':
             state_loss = BCE(y_pred, y_true)
@@ -34,26 +41,28 @@ def compute_loss(algo, y_pred, y_true, p_pred, p_true, term_pred, term_true, rea
         case 'PRIM':
             state_loss = BCE(y_pred, y_true)
 
-    pred_loss = 0.0
+    parent_loss = 0.0
     if reachable:
         idx = torch.tensor(reachable, device=device)
-        pred_loss = LAMBDA * CE(p_pred[idx], p_true[idx])
+        parent_loss = LAMBDA * CE(p_pred[idx], p_true[idx])
 
-    return state_loss + termination_bce(term_pred, term_true, num_steps) + pred_loss
+    return state_loss + termination_bce(term_pred, term_true, num_steps) + parent_loss
 
 def evaluate_algo(algo, model, graph: Graph, source: int, optimizer, device, train=True):
     states, preds, inf = algorithms.compute_states(algo, graph, source)
-    examples = algorithms.generate_examples(algo, graph, states, preds)
+    examples = algorithms.generate_examples(states, preds)
 
     h = None
     total_loss = 0.0
     num_steps = 0
 
-    for i, (_, _, state, next_state, parent) in enumerate(examples):
+    for i, (state, next_state, parent) in enumerate(examples):
 
-        x      = torch.tensor(state,      dtype=torch.float32).unsqueeze(1).to(device)
+        x = torch.tensor(state, dtype=torch.float32).unsqueeze(1).to(device)
         y_true = torch.tensor(next_state, dtype=torch.float32).unsqueeze(1).to(device)
-        p_true = torch.tensor(parent,     dtype=torch.long).to(device)
+        p_true = None
+        if parent != None:
+            p_true = torch.tensor(parent, dtype=torch.long).to(device)
         term_true = torch.tensor(1.0 if i == len(examples) - 1 else 0.0, device=device)
 
         match algo:
@@ -81,210 +90,6 @@ def evaluate_algo(algo, model, graph: Graph, source: int, optimizer, device, tra
 
     return total_loss, num_steps
 
-def evaluate_bfs(model, graph: Graph, source: int, optimizer, device, train=True):
-    states = algorithms.compute_bfs_states(source, graph)
-    examples = algorithms.generate_examples('BFS', graph, states)
-
-    h = None
-    total_loss = 0.0
-    num_steps = 0
-
-    criterion = nn.BCEWithLogitsLoss()
-
-    for i, (algo, _, state, next_state, parent) in enumerate(examples):
-
-        x = torch.tensor(state, dtype=torch.float32).unsqueeze(1).to(device)
-
-        y_true = torch.tensor(next_state, dtype=torch.float32).unsqueeze(1).to(device)
-        term_true = torch.tensor(1.0 if i == len(examples) - 1 else 0.0, device=device)
-
-        y_pred, p_pred, h, term_pred = model(algo, graph, x, h)
-
-        loss = criterion(y_pred, y_true) + termination_bce(term_pred, term_true, len(examples))
-
-        if train:
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-
-        h = h.detach()
-
-        total_loss += loss.item()
-        num_steps += 1
-
-    return total_loss, num_steps
-
-def evaluate_bf(model, graph: Graph, source: int, optimizer, device, train=True) -> None:
-    states, preds, inf = algorithms.compute_bf_states(source, graph)
-    examples = algorithms.generate_examples('BF', graph, states, preds)
-
-    h = None
-    total_loss = 0.0
-    num_steps = 0
-
-    for i, (algo, _, state, next_state, parent) in enumerate(examples):
-
-        x = torch.tensor(state, dtype=torch.float32).unsqueeze(1).to(device)
-
-        y_true = torch.tensor(next_state, dtype=torch.float32).unsqueeze(1).to(device)
-        p_true = torch.tensor(parent, dtype=torch.long).to(device)
-        term_true = torch.tensor(1.0 if i == len(examples) - 1 else 0.0, device=device)
-
-        reachable = [node for node in range(graph.num_nodes) if next_state[node] < inf and node != source]
-
-        y_pred, p_pred, h, term_pred = model(algo, graph, x, h)
-
-        p_pred = torch.stack(p_pred)
-
-        if reachable:
-            idx = torch.tensor(reachable, device=device)
-            loss_pred = CE(p_pred[idx], p_true[idx])
-        else:
-            loss_pred = 0.0
-
-        loss = MSE(y_pred, y_true) + termination_bce(term_pred, term_true, len(examples)) + LAMBDA * loss_pred
-
-        if train:
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-
-        h = h.detach()
-
-        total_loss += loss.item()
-        num_steps += 1
-
-    return total_loss, num_steps
-
-def evaluate_prim(model, graph: Graph, source: int, optimizer, device, train=True) -> None:
-    states, preds = algorithms.compute_prim_states(source, graph)
-    examples = algorithms.generate_examples('PRIM', graph, states, preds)
-
-    criterion = nn.BCEWithLogitsLoss()
-    criterion_p = nn.CrossEntropyLoss()
-
-    h = None
-    total_loss = 0.0
-    num_steps = 0
-
-    for i, (algo, _, state, next_state, parent) in enumerate(examples):
-
-        x = torch.tensor(state, dtype=torch.float32).unsqueeze(1).to(device)
-
-        y_true = torch.tensor(next_state, dtype=torch.float32).unsqueeze(1).to(device)
-        p_true = torch.tensor(parent, dtype=torch.long).to(device)
-        term_true = torch.tensor(1.0 if i == len(examples) - 1 else 0.0, device=device)
-
-        reachable = [i for i in range(graph.num_nodes) if state[i] == 1 and i != source] # in mst
-
-        y_pred, p_pred, h, term_pred = model(algo, graph, x, h)
-
-        p_pred = torch.stack(p_pred)
-
-        if reachable:
-            idx = torch.tensor(reachable, device=device)
-            loss_pred = criterion_p(p_pred[idx], p_true[idx])
-        else:
-            loss_pred = 0.0
-
-        loss = criterion(y_pred, y_true) + LAMBDA * loss_pred + termination_bce(term_pred, term_true, len(examples))
-
-        if train:
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-
-        h = h.detach()
-
-        total_loss += loss.item()
-        num_steps += 1
-
-    return total_loss, num_steps
-
-def evaluate_dfs(model, graph: Graph, source: int, optimizer, device, train=True):
-    states = algorithms.compute_dfs_states(source, graph)
-    examples = algorithms.generate_dfs_examples('DFS', graph, states)
-
-    h = None
-    total_loss = 0.0
-    num_steps = 0
-
-    criterion = nn.BCEWithLogitsLoss()
-
-    for i, (algo, _, state, next_state) in enumerate(examples):
-
-        x = torch.tensor(state, dtype=torch.float32).unsqueeze(1).to(device)
-
-        y_true = torch.tensor(next_state, dtype=torch.float32).unsqueeze(1).to(device)
-        term_true = torch.tensor(1.0 if i == len(examples) - 1 else 0.0, device=device)
-
-        y_pred, h, term_pred = model(algo, graph, x, h)
-
-        loss = criterion(y_pred, y_true) + termination_bce(term_pred, term_true, len(examples))
-
-        if train:
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-
-        h = h.detach()
-
-        total_loss += loss.item()
-        num_steps += 1
-
-    return total_loss, num_steps
-
-def evaluate_dijkstra(model, graph: Graph, source: int, optimizer, device, train=True) -> None:
-    states, preds, inf = algorithms.compute_dijkstra_states(source, graph)
-    examples = algorithms.generate_dijkstra_examples('Dijkstra', graph, states, preds)
-
-    criterion = nn.MSELoss()
-    criterion_p = nn.CrossEntropyLoss()
-
-    h = None
-    total_loss = 0.0
-    num_steps = 0
-
-    for i, (algo, _, state, next_state, pred) in enumerate(examples):
-
-        x = torch.tensor(state, dtype=torch.float32).unsqueeze(1).to(device)
-
-        y_true = torch.tensor(next_state, dtype=torch.float32).unsqueeze(1).to(device)
-        p_true = torch.tensor(pred, dtype=torch.long).to(device)
-        term_true = torch.tensor(1.0 if i == len(examples) - 1 else 0.0, device=device)
-
-        reachable = [node for node in range(graph.num_nodes) if next_state[node] < inf and node != source]
-
-        y, h, term_pred = model(algo, graph, x, h)
-
-        y_pred = y[0]
-        p_pred = torch.stack(y[1])
-
-        if reachable:
-            idx = torch.tensor(reachable, device=device)
-            loss_pred = criterion_p(p_pred[idx], p_true[idx])
-        else:
-            loss_pred = 0.0
-
-        loss = criterion(y_pred, y_true) + LAMBDA * loss_pred + termination_bce(term_pred, term_true, len(examples))
-
-        if train:
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-
-        h = h.detach()
-
-        total_loss += loss.item()
-        num_steps += 1
-
-    return total_loss, num_steps
-
 def evaluate(model, data, optimizer, device, train=False):
     """
     Compute average loss on a dataset without updating weights
@@ -298,8 +103,8 @@ def evaluate(model, data, optimizer, device, train=False):
     else:
         model.eval()
 
-    ctx = torch.no_grad() if not train else torch.enable_grad()
-    with ctx:
+    context = torch.no_grad() if not train else torch.enable_grad()
+    with context:
         for graph, source in data:
             for algo in model.algos:
                 loss, steps = evaluate_algo(algo, model, graph, source, optimizer, device, train=train)
@@ -344,16 +149,11 @@ def train(model, # torch model
 
     for epoch in range(num_epochs):
 
-        model.train()
-
-        total_loss = 0.
-        total_steps = 0
-    
         train_loss = evaluate(model, train_data, optimizer, device, train=True)
         val_loss = evaluate(model, val_data, optimizer, device, train=False)
 
         if verbose:
-            print(f"Epoch {epoch} | train loss = {total_loss / total_steps:.4f} | val loss = {current_val_loss:.4f}")
+            print(f"Epoch {epoch} | train loss = {train_loss:.4f} | val loss = {val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss

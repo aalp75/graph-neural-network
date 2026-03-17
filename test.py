@@ -8,7 +8,6 @@ import algorithms as algorithms
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 
 BCE = nn.BCEWithLogitsLoss()
 MSE = nn.MSELoss()
@@ -23,7 +22,7 @@ def test_bfs(model, data:list, source:int, device, details=False) -> None:
 
     for graph, source in data:
 
-        states = algorithms.compute_bfs_states(source, graph)
+        states = algorithms.compute_bfs_states(graph, source)
 
         h = None
 
@@ -91,7 +90,7 @@ def test_bf(model, data: list, device, details=False) -> None:
     total_steps = 0
 
     for graph, source in data:
-        states, preds, inf = algorithms.compute_bf_states(source, graph)
+        states, preds, inf = algorithms.compute_bf_states(graph, source)
 
         if len(states) < 2:
             continue
@@ -156,7 +155,7 @@ def test_prim(model, data: list, device, details=False) -> None:
     total_steps = 0
 
     for graph, source in data:
-        states, preds = algorithms.compute_prim_states(source, graph)
+        states, preds = algorithms.compute_prim_states(graph, source)
 
         if len(states) < 2:
             continue
@@ -221,7 +220,7 @@ def test_dfs(model, data: list, device, details=False) -> None:
     total_steps = 0
 
     for graph, source in data:
-        states = algorithms.compute_dfs_states(source, graph)
+        states = algorithms.compute_dfs_states(graph, source)
 
         h = None
         x = torch.tensor(states[0], dtype=torch.float32).unsqueeze(1).to(device)
@@ -281,7 +280,7 @@ def test_dijkstra(model, data: list, device, details=False) -> None:
     total_steps = 0
 
     for graph, source in data:
-        states, preds, _ = algorithms.compute_dijkstra_states(source, graph)
+        states, preds, _ = algorithms.compute_dijkstra_states(graph, source)
 
         if len(states) < 2:
             continue
@@ -360,12 +359,12 @@ def test(test_size:int = 1, num_nodes:int = 20):
         source = random.randrange(graph.num_nodes)
         test_data.append((graph, source))
 
-    device = device = next(model.parameters()).device
-    details=True
+    device = next(model.parameters()).device
+    details = True
 
     test_bfs(model, test_data, source, device, details)
     test_bf(model, test_data, device, details)
-    test_prim(model, test_data, device, details)
+    #test_prim(model, test_data, device, details)
     #test_dfs(model, graph, source)
     #test_dijkstra(model, graph, source)
 

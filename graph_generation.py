@@ -3,14 +3,12 @@ import math
 from graph import Graph
 import random
 
+def random_weight(weighted: bool, weight_mn: float, weight_mx: float) -> float:
+    return random.uniform(weight_mn, weight_mx) if weighted else 1.0
+
 def add_self_loop(graph: Graph, weighted, weight_mn, weight_mx):
-
     for i in range(graph.num_nodes):
-        w = 1.0
-        if weighted:
-            w = random.uniform(weight_mn, weight_mx)
-        graph.add_edge(i, i, w)
-
+        graph.add_edge(i, i, random_weight(weighted, weight_mn, weight_mx))
     return graph
 
 def ladder_graph(
@@ -29,13 +27,13 @@ def ladder_graph(
     for node in range(num_nodes):
         if node % 2 == 0:
             if node + 1 < num_nodes:
-                w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+                w = random_weight(weighted, weight_mn, weight_mx)
                 graph.add_edge(node, node + 1, w)
             if node + 2 < num_nodes:
-                w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+                w = random_weight(weighted, weight_mn, weight_mx)
                 graph.add_edge(node, node + 2, w)
         if node % 2 == 1 and node + 2 < num_nodes:
-            w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+            w = random_weight(weighted, weight_mn, weight_mx)
             graph.add_edge(node, node + 2, w)
 
     if self_loop:
@@ -61,10 +59,10 @@ def grid_graph(
 
     for node in range(num_nodes):
         if node + c < num_nodes:
-            w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+            w = random_weight(weighted, weight_mn, weight_mx)
             graph.add_edge(node, node + c, w)
         if node % c != c - 1 and node + 1 < num_nodes:
-            w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+            w = random_weight(weighted, weight_mn, weight_mx)
             graph.add_edge(node, node + 1, w)
 
     if self_loop: 
@@ -103,7 +101,7 @@ def random_tree(
     for x in prufer_seq:
         for node in range(num_nodes):
             if degree[node] == 1:
-                w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+                w = random_weight(weighted, weight_mn, weight_mx)
                 graph.add_edge(node, x, w)
                 degree[x] -= 1
                 degree[node] -= 1
@@ -111,7 +109,7 @@ def random_tree(
 
     # connect the 2 remaining leaves
     leaves = [node for node in range(num_nodes) if degree[node] == 1]
-    w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+    w = random_weight(weighted, weight_mn, weight_mx)
     graph.add_edge(leaves[0], leaves[1], w)
 
     if self_loop:
@@ -142,7 +140,7 @@ def random_graph(
     for i in range(num_nodes):
         for j in range(i + 1, num_nodes):
             if random.random() < p:
-                w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+                w = random_weight(weighted, weight_mn, weight_mx)
                 graph.add_edge(i, j, w)
 
     if self_loop: 
@@ -170,7 +168,7 @@ def barabis_albert_graph(
     # start with a fully connected graph
     for node in range(min(num_nodes, 5)):
         for neigh in range(node + 1, (min(num_nodes, 5))):
-            w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+            w = random_weight(weighted, weight_mn, weight_mx)
             graph.add_edge(node, neigh, w)
         processed.append(node)
 
@@ -181,7 +179,7 @@ def barabis_albert_graph(
             edges = 5
         neighs = random.sample(processed, edges)
         for neigh in neighs:
-            w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+            w = random_weight(weighted, weight_mn, weight_mx)
             graph.add_edge(node, neigh, w)
 
         processed.append(node)
@@ -222,7 +220,7 @@ def community_graph(
         for u in range(offset):
             for v in range(offset, graph.num_nodes):
                 if random.random() < 0.05:
-                    w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+                    w = random_weight(weighted, weight_mn, weight_mx)
                     graph.add_edge(u, v, w)
 
     if self_loop:
@@ -275,7 +273,7 @@ def caveman_graph(
         c1, c2 = random.sample(range(4), 2) # pick 2 different cliques
         u = random.randint(starts[c1], starts[c1] + sizes[c1] - 1)
         v = random.randint(starts[c2], starts[c2] + sizes[c2] - 1)
-        w = 1.0 if not weighted else random.uniform(weight_mn, weight_mx)
+        w = random_weight(weighted, weight_mn, weight_mx)
         graph.add_edge(u, v, w)
 
     if self_loop:
