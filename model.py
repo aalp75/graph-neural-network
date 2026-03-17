@@ -33,8 +33,9 @@ class Predecessor(nn.Module):
         super().__init__()
         self.proj = nn.Linear(2 * hidden_dim + 1, 1)
 
-    def forward(self, h:torch.Tensor, graph:Graph):
+    def forward(self, graph: Graph, h:torch.Tensor):
         pred_scores = []
+        n = graph.num_nodes
         for node in range(graph.num_nodes):
             scores = [torch.zeros(1, device=h.device, dtype=h.dtype) for _ in range(graph.num_nodes)]
             for neigh, weight in graph.adj[node]:
@@ -84,31 +85,30 @@ class Processor(nn.Module):
             h[u] = self.update(torch.cat([z[u], aggregated_msg], dim=0))
 
         return torch.stack(h, dim=0)
+    
+class Termination(nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+        self.term = nn.Linear(2 * hidden_dim, 1)
 
+    def forward(self, h):
+        h_bar = torch.mean(h, dim=0, keepdim=True).expand(h.size(0), -1)  # [n, hidden_dim]
+        logits = self.term(torch.cat([h, h_bar], dim=1))  # [n, 1]
+        return logits.mean()
 
 class Model(nn.Module):
-    def __init__(self, in_dim: int, hidden_dim: int, out_dim: int):
+    def __init__(self, algos: list, in_dim: int, hidden_dim: int, out_dim: int):
         super().__init__()
+
+        self.algos = algos
 
         self.hidden_dim = hidden_dim
 
-        self.encoder_bfs = Encoder(in_dim, hidden_dim)
-        self.decoder_bfs = Decoder(hidden_dim, out_dim)
-
-        self.encoder_dfs = Encoder(in_dim, hidden_dim)
-        self.decoder_dfs = Decoder(hidden_dim, out_dim)
-
-        self.encoder_bf = Encoder(in_dim, hidden_dim)
-        self.decoder_bf = Decoder(hidden_dim, out_dim)
-
-        self.encoder_prim = Encoder(in_dim, hidden_dim)
-        self.decoder_prim = Decoder(hidden_dim, out_dim)
-
-        self.encoder_dijkstra = Encoder(in_dim, hidden_dim)
-        self.decoder_dijkstra = Decoder(hidden_dim, out_dim)
+        self.encoders = nn.ModuleDict({a: Encoder(in_dim, hidden_dim) for a in algos})
+        self.decoders = nn.ModuleDict({a: Decoder(hidden_dim, out_dim) for a in algos})
+        self.terminations = nn.ModuleDict({a: Termination(hidden_dim) for a in algos})
 
         self.predecessor = Predecessor(hidden_dim)
-
         self.processor = Processor(hidden_dim)
 
     def forward(self, 
@@ -117,40 +117,19 @@ class Model(nn.Module):
                 x: torch.Tensor, 
                 h: torch.Tensor | None = None
     ):
-        if algo == 'BFS':
-            z = self.encoder_bfs(x, h)
-        elif algo == 'DFS':
-            z = self.encoder_dfs(x, h)
-        elif algo == 'BF':
-            z = self.encoder_bf(x, h)
-        elif algo == 'PRIM':
-            z = self.encoder_prim(x, h)
-        elif algo == 'Dijkstra':
-            z = self.encoder_dijkstra(x, h)
-        else:
+        
+        if algo not in self.algos:
             raise ValueError(f"Unknown algorithm: {algo}")
-
+        
+        z = self.encoders[algo](x, h)
         h = self.processor(graph, z)
+        y = self.decoders[algo](z, h)
+        t = self.terminations[algo](h)
+        p = self.predecessor(graph, h)
 
-        if algo == 'BFS':
-            y = self.decoder_bfs(z, h)
-        elif algo == 'DFS':
-            y = self.decoder_dfs(z, h)
-        elif algo == 'BF':
-            y = self.decoder_bf(z, h)
-            pred_scores = self.predecessor(h, graph)
-            y = [y, pred_scores]
-        elif algo == 'PRIM':
-            y = self.decoder_prim(z, h)
-            pred_scores = self.predecessor(h, graph)
-            y = [y, pred_scores]
-        elif algo == 'Dijkstra':
-            y = self.decoder_dijkstra(z, h)
-            pred_scores = self.predecessor(h, graph)
-            y = [y, pred_scores]
-
-        return y, h
+        return y, p, h, t
 
 if __name__ == "__main__":
-    model = Model(1, 32, 1)
+    algos = ['BFS', 'BF']
+    model = Model(algos, 1, 32, 1)
     

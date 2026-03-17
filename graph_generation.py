@@ -309,12 +309,12 @@ if __name__ == "__main__":
     num_nodes = 5
     p = 0.5
     g = random_graph(num_nodes,
-                         p,
-                         weighted=True,
-                         connected=True,
-                         self_loop=True,
-                         weight_mn=0,
-                         weight_mx=2
+                     p=p,
+                     weighted=True,
+                     connected=True,
+                     self_loop=True,
+                     weight_mn=0,
+                     weight_mx=2
     )
     print(g)
 

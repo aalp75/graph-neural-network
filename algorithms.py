@@ -3,14 +3,38 @@ from queue import PriorityQueue
 from graph import Graph
 
 """
-Algorithms to learn:
+List of implemented algorithms:
 
 - BFS
 - Bellman-Ford
-- DFS: ongoing
+- Prim
+- DFS
+- Dijkstra
 """
 
-def compute_bfs_states(source: int, graph: Graph) -> list:
+def compute_longest_path(graph: Graph) -> float:
+    """
+    Compute longest shortest path using Floyd-Warshall.
+    Complexity is O(graph.num_nodes ^ 3)
+    """
+    n = graph.num_nodes
+    dist = [[float('inf')] * n for _ in range(n)]
+
+    for u in range(n):
+        dist[u][u] = 0
+        for v, w in graph.adj[u]:
+            dist[u][v] = min(dist[u][v], w)
+
+    for k in range(n):
+        for u in range(n):
+            for v in range(n):
+                dist[u][v] = min(dist[u][v], dist[u][k] + dist[k][v])
+
+    longest_path = max(dist[u][v] for u in range(n) for v in range(n) if dist[u][v] < float('inf'))
+
+    return longest_path + 1
+
+def compute_bfs_states(graph: Graph, source: int) -> list:
     state = [0.] * graph.num_nodes
     state[source] = 1.
 
@@ -32,19 +56,11 @@ def compute_bfs_states(source: int, graph: Graph) -> list:
 
     return states
 
-def generate_bfs_examples(algo: str, graph: Graph, states: list) -> list:
-    data = []
-    for i in range(len(states) - 1):
-        data.append((algo, graph, states[i], states[i + 1]))
-    return data
-
-def compute_bf_states(source:int , graph: Graph) -> tuple:
+def compute_bf_states(graph: Graph, source:int) -> tuple:
 
     n = graph.num_nodes
 
-    max_weight = max((w for adj in graph.adj for _, w in adj), default=1.0)
-
-    inf = n * max_weight + 1
+    inf = compute_longest_path(graph) + 1
 
     state = [inf] * graph.num_nodes # max value is n
     pred = [source] * n
@@ -74,47 +90,7 @@ def compute_bf_states(source:int , graph: Graph) -> tuple:
 
     return states, preds, inf
 
-def generate_bf_examples(algo: str, graph: Graph, states: list, preds: list) -> list:
-    data = []
-    for i in range(len(states) - 1):
-        data.append((algo, graph, states[i], states[i + 1], preds[i + 1]))
-    return data
-
-def compute_dfs_states(source:int , graph: Graph) -> list:
-    """
-    Implemented but unused in the model
-    """
-
-    state = [0.] * graph.num_nodes
-    state[source] = 1.
-    states = [state.copy()]
-
-    stack = [source]
-    visited = {source}
-
-    while stack:
-        node = stack[-1]
-        found = False
-        for neigh, _ in graph.adj[node]:
-            if neigh not in visited:
-                visited.add(neigh)
-                state[neigh] = 1.
-                stack.append(neigh)
-                states.append(state.copy())
-                found = True
-                break
-        if not found:
-            stack.pop()
-
-    return states
-
-def generate_dfs_examples(algo: str, graph: Graph, states: list) -> list:
-    data = []
-    for i in range(len(states) - 1):
-        data.append((algo, graph, states[i], states[i + 1]))
-    return data
-
-def compute_prim_states(source: int, graph: Graph) -> tuple:
+def compute_prim_states(graph: Graph, source: int) -> tuple:
 
     n = graph.num_nodes
 
@@ -155,17 +131,35 @@ def compute_prim_states(source: int, graph: Graph) -> tuple:
 
     return states, preds
 
-def generate_prim_examples(algo: str, graph: Graph, states: list, preds: list) -> list:
-    data = []
-    for i in range(len(states) - 1):
-        data.append((algo, graph, states[i], states[i + 1], preds[i + 1]))
-    return data
+def compute_dfs_states(graph: Graph, source:int) -> list:
 
-def compute_dijkstra_states(source: int, graph: Graph) -> tuple:
+    state = [0.] * graph.num_nodes
+    state[source] = 1.
+    states = [state.copy()]
+
+    stack = [source]
+    visited = {source}
+
+    while stack:
+        node = stack[-1]
+        found = False
+        for neigh, _ in graph.adj[node]:
+            if neigh not in visited:
+                visited.add(neigh)
+                state[neigh] = 1.
+                stack.append(neigh)
+                states.append(state.copy())
+                found = True
+                break
+        if not found:
+            stack.pop()
+
+    return states
+
+def compute_dijkstra_states(graph: Graph, source: int) -> tuple:
     n = graph.num_nodes
 
-    max_weight = max((w for adj in graph.adj for _, w in adj), default=1.0)
-    inf = max_weight * n + 1
+    inf = compute_longest_path(graph) + 1
     state = [inf] * n
     pred = [source] * n
 
@@ -200,10 +194,29 @@ def compute_dijkstra_states(source: int, graph: Graph) -> tuple:
 
     return states, preds, inf
 
-def generate_dijkstra_examples(algo: str, graph: Graph, states: list, preds: list) -> list:
+def compute_states(algo: str, graph: Graph, source: int):
+    match algo:
+        case 'BFS':
+            return compute_bfs_states(source, graph), None, None
+        case 'DFS':
+            return compute_dfs_states(source, graph), None, None
+        case 'BF':
+            states, preds, inf = compute_bf_states(source, graph)
+            return states, preds, inf
+        case 'PRIM':
+            states, preds = compute_prim_states(source, graph)
+            return states, preds, None
+        case 'Dijkstra':
+            states, preds, inf = compute_dijkstra_states(source, graph)
+            return states, preds, inf
+        case _:
+            raise ValueError(f"Unknown algorithm: {algo}")
+
+def generate_examples(algo: str, graph: Graph, states: list, parents: list | None = None) -> list:
     data = []
     for i in range(len(states) - 1):
-        data.append((algo, graph, states[i], states[i + 1], preds[i + 1]))
+        parent = None if parents is None else parents[i + 1]
+        data.append((algo, graph, states[i], states[i + 1], parent))
     return data
 
 if __name__ == "__main__":
