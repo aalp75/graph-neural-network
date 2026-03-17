@@ -2,7 +2,7 @@
 
 - [x] Add predecessor output
 - [x] Add Prim Algorithm
-- [ ] Choose a new algorithm to add (Dijkstra)
+- [x] Choose a new algorithm to add (Dijkstra, DFS)
 - [ ] Add a termination network (optional)
-- [ ] Add other type of graph in the training data (tree, etc)
-- [ ] Add early stopping on a validation set
+- [x] Add other type of graph in the training data (tree, etc)
+- [x] Add early stopping on a validation set

@@ -38,6 +38,8 @@ class Predecessor(nn.Module):
         for node in range(graph.num_nodes):
             scores = [torch.zeros(1, device=h.device, dtype=h.dtype) for _ in range(graph.num_nodes)]
             for neigh, weight in graph.adj[node]:
+                if neigh == node:  # skip self-loops
+                    continue
                 weight_tensor = torch.tensor([weight], device=h.device, dtype=h.dtype)
                 scores[neigh] = self.proj(torch.cat([h[node], h[neigh], weight_tensor]))
             
@@ -93,28 +95,38 @@ class Model(nn.Module):
         self.encoder_bfs = Encoder(in_dim, hidden_dim)
         self.decoder_bfs = Decoder(hidden_dim, out_dim)
 
+        self.encoder_dfs = Encoder(in_dim, hidden_dim)
+        self.decoder_dfs = Decoder(hidden_dim, out_dim)
+
         self.encoder_bf = Encoder(in_dim, hidden_dim)
         self.decoder_bf = Decoder(hidden_dim, out_dim)
 
         self.encoder_prim = Encoder(in_dim, hidden_dim)
         self.decoder_prim = Decoder(hidden_dim, out_dim)
 
+        self.encoder_dijkstra = Encoder(in_dim, hidden_dim)
+        self.decoder_dijkstra = Decoder(hidden_dim, out_dim)
+
         self.predecessor = Predecessor(hidden_dim)
 
         self.processor = Processor(hidden_dim)
 
     def forward(self, 
-                algo: str, 
+                algo: str,
                 graph: Graph, 
                 x: torch.Tensor, 
                 h: torch.Tensor | None = None
     ):
         if algo == 'BFS':
             z = self.encoder_bfs(x, h)
+        elif algo == 'DFS':
+            z = self.encoder_dfs(x, h)
         elif algo == 'BF':
             z = self.encoder_bf(x, h)
         elif algo == 'PRIM':
             z = self.encoder_prim(x, h)
+        elif algo == 'Dijkstra':
+            z = self.encoder_dijkstra(x, h)
         else:
             raise ValueError(f"Unknown algorithm: {algo}")
 
@@ -122,12 +134,18 @@ class Model(nn.Module):
 
         if algo == 'BFS':
             y = self.decoder_bfs(z, h)
+        elif algo == 'DFS':
+            y = self.decoder_dfs(z, h)
         elif algo == 'BF':
             y = self.decoder_bf(z, h)
             pred_scores = self.predecessor(h, graph)
             y = [y, pred_scores]
         elif algo == 'PRIM':
             y = self.decoder_prim(z, h)
+            pred_scores = self.predecessor(h, graph)
+            y = [y, pred_scores]
+        elif algo == 'Dijkstra':
+            y = self.decoder_dijkstra(z, h)
             pred_scores = self.predecessor(h, graph)
             y = [y, pred_scores]
 

@@ -1,3 +1,5 @@
+from queue import PriorityQueue
+
 from graph import Graph
 
 """
@@ -36,11 +38,15 @@ def generate_bfs_examples(algo: str, graph: Graph, states: list) -> list:
         data.append((algo, graph, states[i], states[i + 1]))
     return data
 
-def compute_bf_states(source:int , graph: Graph) -> list:
+def compute_bf_states(source:int , graph: Graph) -> tuple:
 
     n = graph.num_nodes
 
-    state = [float(n)] * graph.num_nodes # max value is n
+    max_weight = max((w for adj in graph.adj for _, w in adj), default=1.0)
+
+    inf = n * max_weight + 1
+
+    state = [inf] * graph.num_nodes # max value is n
     pred = [source] * n
 
     state[source] = 0.0
@@ -66,7 +72,7 @@ def compute_bf_states(source:int , graph: Graph) -> list:
         states.append(state.copy())
         preds.append(pred.copy())
 
-    return states, preds
+    return states, preds, inf
 
 def generate_bf_examples(algo: str, graph: Graph, states: list, preds: list) -> list:
     data = []
@@ -102,7 +108,13 @@ def compute_dfs_states(source:int , graph: Graph) -> list:
 
     return states
 
-def compute_prim_states(source: int, graph: Graph) -> list:
+def generate_dfs_examples(algo: str, graph: Graph, states: list) -> list:
+    data = []
+    for i in range(len(states) - 1):
+        data.append((algo, graph, states[i], states[i + 1]))
+    return data
+
+def compute_prim_states(source: int, graph: Graph) -> tuple:
 
     n = graph.num_nodes
 
@@ -133,7 +145,7 @@ def compute_prim_states(source: int, graph: Graph) -> list:
         next_state[best_node] = 1
         next_pred[best_node] = best_pred
 
-        if next_state == state:
+        if next_state == state or best_weight == 1e10:
             break
         state = next_state
         pred = next_pred
@@ -149,6 +161,50 @@ def generate_prim_examples(algo: str, graph: Graph, states: list, preds: list) -
         data.append((algo, graph, states[i], states[i + 1], preds[i + 1]))
     return data
 
+def compute_dijkstra_states(source: int, graph: Graph) -> tuple:
+    n = graph.num_nodes
+
+    max_weight = max((w for adj in graph.adj for _, w in adj), default=1.0)
+    inf = max_weight * n + 1
+    state = [inf] * n
+    pred = [source] * n
+
+    state[source] = 0.0
+    pred[source] = source
+
+    states = [state.copy()]
+    preds = [pred.copy()]
+
+    visited = [False] * n
+    pq = PriorityQueue()
+    pq.put((0.0, source))
+
+    while not pq.empty():
+        dist, node = pq.get()
+
+        if visited[node]:
+            continue
+        visited[node] = True
+
+        for neigh, weight in graph.adj[node]:
+            if neigh == node:
+                continue
+            new_dist = state[node] + weight
+            if new_dist < state[neigh]:
+                state[neigh] = new_dist
+                pred[neigh] = node
+                pq.put((new_dist, neigh))
+
+        states.append(state.copy())
+        preds.append(pred.copy())
+
+    return states, preds, inf
+
+def generate_dijkstra_examples(algo: str, graph: Graph, states: list, preds: list) -> list:
+    data = []
+    for i in range(len(states) - 1):
+        data.append((algo, graph, states[i], states[i + 1], preds[i + 1]))
+    return data
 
 if __name__ == "__main__":
     ## BFS
@@ -164,6 +220,7 @@ if __name__ == "__main__":
     g = Graph(5, adj)
     print(g)
 
+    print("\n-- Breadth First Search --")
     states = compute_bfs_states(0, g)
     ite = 1
     for state in states:
@@ -173,7 +230,8 @@ if __name__ == "__main__":
     print()
 
     ## Bellman-Ford
-    states, predecessors = compute_bf_states(0, g)
+    print("\n-- Bellman-Ford --")
+    states, predecessors, inf = compute_bf_states(0, g)
     ite = 1
     for state in states:
         print(f"{ite} - {state}")
@@ -182,6 +240,14 @@ if __name__ == "__main__":
     # Prim
     print("\n-- Prim --")
     states, preds = compute_prim_states(0, g)
+    ite = 1
+    for state in states:
+        print(f"{ite} - {state}")
+        ite += 1
+
+    # Dijkstra
+    print("\n-- Dijkstra --")
+    states, preds, inf = compute_dijkstra_states(0, g)
     ite = 1
     for state in states:
         print(f"{ite} - {state}")

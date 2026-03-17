@@ -14,9 +14,33 @@ class Graph:
         if u != v:
             self.adj[v].append((u, w))
 
+    def remove_edge(self, u:int , v:int) -> None:
+        """
+        Remove edge (u, v)
+        Complexity is O(degree) due to list filtering
+        """
+        self.adj[u] = [(n, w) for n, w in self.adj[u] if n != v]
+        if u != v:
+            self.adj[v] = [(n, w) for n, w in self.adj[v] if n != u]
+
     def __repr__(self) -> str:
-        return f"Graph(num_nodes={self.num_nodes}, adj={self.adj})"
+        res = f"Graph with {self.num_nodes} nodes and adjacency list:\n"
+        for node in range(self.num_nodes):
+            edges = [(v, round(w, 3)) for v, w in self.adj[node]]
+            res += f"  Node {node}: {edges}\n"
+        return res
     
+    def merge(self, other: 'Graph') -> None:
+        """
+        Merge 2 graphs: self and other
+        """
+        offset = self.num_nodes
+        self.num_nodes += other.num_nodes
+        self.adj.extend([[] for _ in range(other.num_nodes)])
+        for node in range(other.num_nodes):
+            for neigh, weight in other.adj[node]:
+                self.adj[node + offset].append((neigh + offset, weight))
+        
 if __name__ == "__main__":
     graph = Graph(3)
     graph.add_edge(0, 1, 5.3)

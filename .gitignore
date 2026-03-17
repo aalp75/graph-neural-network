@@ -4,4 +4,18 @@ __pycache__/
 data/
 references/
 # pre trained model
-parameters/ 
+parameters/
+
+# LaTeX build files
+report/
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
