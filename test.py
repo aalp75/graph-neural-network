@@ -9,68 +9,68 @@ import algorithms as algorithms
 import torch
 import torch.nn as nn
 
-BCE = nn.BCEWithLogitsLoss()
-MSE = nn.MSELoss()
-CE = nn.CrossEntropyLoss()
 
-def test_bfs(model, data:list, source:int, device, details=False) -> None:
+def test_bfs(model: Model, data: list, device: torch.device, details: bool = False) -> None:
     print("** TESTING BFS **")
+    model.eval()
 
     total_score = 0
     total_last_step_score = 0
     total_steps = 0
+    term_score = 0
 
     for graph, source in data:
 
         states = algorithms.compute_bfs_states(graph, source)
 
+        if len(states) < 2:
+            continue
+
         h = None
 
-        print('State 0 = ', states[0])
+        if details:
+            print('State 0 = ', states[0])
 
         x = torch.tensor(states[0], dtype=torch.float32).unsqueeze(1).to(device)
 
         with torch.no_grad():
             for step in range(len(states) - 1):
-                state = states[step]
                 target = states[step + 1]
                 y_true = torch.tensor(target, dtype=torch.float32).unsqueeze(1).to(device)
                 term_true = torch.tensor([1 if step == (len(states) - 2) else 0])
 
                 y_pred, p_pred, h, term_pred = model('BFS', graph, x, h)
-
-                bce = BCE(y_pred, y_true).item()
+                term_prob = torch.sigmoid(term_pred).item()
 
                 probs = torch.sigmoid(y_pred).squeeze(1).tolist()
                 prediction = [1 if p > 0.5 else 0 for p in probs]
 
                 visited_pred = [i for i, p in enumerate(probs) if p > 0.5]
                 visited_true = [i for i, v in enumerate(target) if v == 1.0]
-            
+
                 score = sum(p == t for p, t in zip(prediction, target)) / len(target)
 
                 h = h.detach()
 
                 if details:
+                    bce = nn.BCEWithLogitsLoss()(y_pred, y_true).item()
                     print(f"Step {step}")
-                    for i in range(len(state)):
-                        print(f"  node {i}: input={state[i]:.0f}  prob={probs[i]:.2f} "
-                              f"prediction={prediction[i]} target={target[i]:.0f}")
                     print(f"Visited prediction: {visited_pred}")
                     print(f"Visited target:     {visited_true}")
-                    print(f"Termination: prob={torch.sigmoid(term_pred).item():.2f}"
-                          f"({'yes' if torch.sigmoid(term_pred).item() > 0.5 else 'no'}), " 
-                          f"target={'yes' if step == len(states) - 2 else 'no'}")
+                    print(f"Termination: prob={term_prob:.2f}"
+                          f" ({'yes' if term_prob > 0.5 else 'no'}), "
+                          f"target={'yes' if term_true.item() else 'no'}")
                     print("BCE:", bce)
                     print(f"{score * 100:.2f}% predicted")
                     print()
 
                 total_score += score
                 total_steps += 1
+                term_score += (term_true == (term_prob > 0.5))
 
                 x = torch.sigmoid(y_pred).detach()
 
-                if torch.sigmoid(term_pred).item() > 0.5: # terminate signal
+                if term_prob > 0.5:
                     break
 
             target = states[-1]
@@ -79,18 +79,20 @@ def test_bfs(model, data:list, source:int, device, details=False) -> None:
 
     print(f"Total score: {total_score / total_steps * 100:.2f}%")
     print(f"Last step score: {total_last_step_score / len(data) * 100:.2f}%")
+    print(f"Termination score: {term_score.item() / total_steps * 100:.2f}%")
 
-def test_bf(model, data: list, device, details=False) -> None:
+def test_bf(model: Model, data: list, device: torch.device, details: bool = False) -> None:
     print("** TESTING BELLMAN-FORD **")
+    model.eval()
 
     total_mse = 0.0
     total_p_loss = 0.0
-
     total_last_step_mse = 0.0
     total_steps = 0
+    term_score = 0
 
     for graph, source in data:
-        states, preds, inf = algorithms.compute_bf_states(graph, source)
+        states, parents, inf = algorithms.compute_bf_states(graph, source)
 
         if len(states) < 2:
             continue
@@ -100,62 +102,73 @@ def test_bf(model, data: list, device, details=False) -> None:
 
         with torch.no_grad():
             for step in range(len(states) - 1):
-                state = states[step]
                 target = states[step + 1]
-                pred = preds[step + 1]
+                parent = parents[step + 1]
+
+                reachable = [i for i in range(graph.num_nodes) if i != source and target[i] < inf]
 
                 y_true = torch.tensor(target, dtype=torch.float32).unsqueeze(1).to(device)
-                p_true = torch.tensor(pred, dtype=torch.long).to(device)
+                p_true = torch.tensor(parent, dtype=torch.long).to(device)
+                term_true = torch.tensor([1 if step == (len(states) - 2) else 0])
 
                 y_pred, p_pred, h, term_pred = model('BF', graph, x, h)
+                term_prob = torch.sigmoid(term_pred).item()
 
                 p_pred_scores = torch.stack(p_pred)
 
-                mse = MSE(y_pred, y_true).item()
-                ce = CE(p_pred_scores, p_true).item()
+                mse = nn.MSELoss()(y_pred, y_true).item()
+                ce = nn.CrossEntropyLoss()(p_pred_scores, p_true).item()
                 p_pred = p_pred_scores.argmax(dim=1).tolist()
-                pred_acc = sum(p == t for p, t in zip(p_pred, pred)) / len(pred)
+
+                pred_acc = sum(p_pred[i] == parent[i] for i in reachable) / len(reachable) if reachable else 1.0
 
                 h = h.detach()
 
+                prediction = [round(x, 2) for x in y_pred.squeeze(1).tolist()]
+                target = [round(x, 2) for x in target]
+
                 if details:
                     print(f"Step {step}")
-                    for i in range(len(state)):
-                        print(f"  node {i}: dist={state[i]:.2f} -> pred={y_pred.squeeze(1)[i].item():.2f} "
-                              f"(target={target[i]:.2f})  "
-                              f"predecessor: pred={p_pred[i]} target={pred[i]}")
+                    print(f"Prediction: {prediction}")
+                    print(f"Target:     {target}")
                     print(f"MSE: {mse:.4f}  Predecessor CE: {ce:.4f}  Pred acc: {pred_acc*100:.1f}%")
-                    print(f"Termination: prob={torch.sigmoid(term_pred).item():.2f}"
-                          f"({'yes' if torch.sigmoid(term_pred).item() > 0.5 else 'no'}), "
-                          f"target={'yes' if step == len(states) - 2 else 'no'}")
+                    print(f"Termination: prob={term_prob:.2f}"
+                          f" ({'yes' if term_prob > 0.5 else 'no'}), "
+                          f"target={'yes' if term_true.item() else 'no'}")
                     print()
 
                 total_mse += mse
                 total_p_loss += pred_acc
                 total_steps += 1
+                term_score += (term_true == (term_prob > 0.5))
 
                 x = y_pred.detach()
 
-                if torch.sigmoid(term_pred).item() > 0.5:
+                if term_prob > 0.5:
                     break
 
             final_target = states[-1]
-            total_last_step_mse += MSE(y_pred, torch.tensor(final_target, dtype=torch.float32).unsqueeze(1).to(device)).item()
+            total_last_step_mse += nn.MSELoss()(y_pred, torch.tensor(final_target, dtype=torch.float32).unsqueeze(1).to(device)).item()
 
     print(f"Total mean MSE: {total_mse / total_steps:.4f}")
     print(f"Total mean predecessor acc: {total_p_loss / total_steps * 100:.2f}%")
     print(f"Last step mean MSE: {total_last_step_mse / len(data):.4f}")
+    print(f"Termination score: {term_score.item() / total_steps * 100:.2f}%")
 
-def test_prim(model, data: list, device, details=False) -> None:
+def test_prim(model: Model, data: list, device: torch.device, details: bool = False) -> None:
     print("** TESTING PRIM **")
+    model.eval()
 
-    total_bce = 0.0
-    total_pred_acc = 0.0
-    total_last_step_bce = 0.0
+    total_ce = 0.0
+    total_next_node_acc = 0.0
     total_steps = 0
+    term_score = 0
 
     for graph, source in data:
-        states, preds = algorithms.compute_prim_states(graph, source)
+        states, parents = algorithms.compute_prim_states(graph, source)
+
+        if details:
+            print(f"Source = {source}")
 
         if len(states) < 2:
             continue
@@ -167,120 +180,66 @@ def test_prim(model, data: list, device, details=False) -> None:
             for step in range(len(states) - 1):
                 state = states[step]
                 target = states[step + 1]
-                pred = preds[step + 1]
+                parent = parents[step + 1]
+                next_node = next(i for i in range(graph.num_nodes) if state[i] == 0 and target[i] == 1)
 
-                y_true = torch.tensor(target, dtype=torch.float32).unsqueeze(1).to(device)
-                p_true = torch.tensor(pred, dtype=torch.long).to(device)
+                next_node_true = torch.tensor([next_node], dtype=torch.long).to(device)
+                p_true = torch.tensor(parent, dtype=torch.long).to(device)
+                term_true = torch.tensor([1 if step == (len(states) - 2) else 0])
 
                 y_pred, p_pred, h, term_pred = model('PRIM', graph, x, h)
+                term_prob = torch.sigmoid(term_pred).item()
 
                 p_pred_scores = torch.stack(p_pred)
 
-                bce = BCE(y_pred, y_true).item()
-                ce = CE(p_pred_scores, p_true).item()
+                ce = nn.CrossEntropyLoss()(y_pred.squeeze(1).unsqueeze(0), next_node_true).item()
+                p_ce = nn.CrossEntropyLoss()(p_pred_scores, p_true).item()
+                logits = y_pred.squeeze(1)
+                undiscovered = [i for i in range(graph.num_nodes) if state[i] == 0]
+                next_node_pred = max(undiscovered, key=lambda i: logits[i].item())
                 p_pred = p_pred_scores.argmax(dim=1).tolist()
-                pred_acc = sum(p == t for p, t in zip(p_pred, pred)) / len(pred)
-                mst_pred = [i for i, v in enumerate(torch.sigmoid(y_pred).squeeze(1).tolist()) if v > 0.5]
-                mst_true = [i for i, v in enumerate(target) if v == 1]
 
                 h = h.detach()
 
                 if details:
+                    mst_pred = [i for i, v in enumerate(state) if v == 1] + [next_node_pred]
+                    mst_true = [i for i, v in enumerate(target) if v == 1]
                     print(f"Step {step}")
-                    print(f"  MST prediction: {mst_pred}  target: {mst_true}")
-                    for i in range(len(state)):
-                        print(f"  node {i}: in_mst={state[i]:.0f}  predecessor: pred={p_pred[i]} target={pred[i]}")
-                    print(f"BCE: {bce:.4f}  Predecessor CE: {ce:.4f}  Pred acc: {pred_acc*100:.1f}%")
-                    print(f"Termination: prob={torch.sigmoid(term_pred).item():.2f}"
-                          f"({'yes' if torch.sigmoid(term_pred).item() > 0.5 else 'no'}), "
-                          f"target={'yes' if step == len(states) - 2 else 'no'}")
+                    print(f"MST prediction: {mst_pred}")
+                    print(f"MST target:     {mst_true}")
+                    print(f"Next node: pred={next_node_pred}  target={next_node}")
+                    print(f"Next node CE: {ce:.4f}  Predecessor CE: {p_ce:.4f}")
+                    print(f"Termination: prob={term_prob:.2f}"
+                          f" ({'yes' if term_prob > 0.5 else 'no'}), "
+                          f"target={'yes' if term_true.item() else 'no'}")
                     print()
 
-                total_bce += bce
-                total_pred_acc += pred_acc
+                total_ce += ce
+                total_next_node_acc += (next_node_pred == next_node)
                 total_steps += 1
+                term_score += (term_true == (term_prob > 0.5))
 
-                x = torch.sigmoid(y_pred).detach()
+                x = x.clone()
+                x[next_node_pred] = 1.0
 
-                if torch.sigmoid(term_pred).item() > 0.5:
+                if term_prob > 0.5:
                     break
 
-            final_target = states[-1]
-            total_last_step_bce += BCE(y_pred, torch.tensor(final_target, dtype=torch.float32).unsqueeze(1).to(device)).item()
+    print(f"Total mean next node CE: {total_ce / total_steps:.4f}")
+    print(f"Total mean next node acc: {total_next_node_acc / total_steps * 100:.2f}%")
+    print(f"Termination score: {term_score.item() / total_steps * 100:.2f}%")
 
-    print(f"Total mean BCE: {total_bce / total_steps:.4f}")
-    print(f"Total mean predecessor acc: {total_pred_acc / total_steps * 100:.2f}%")
-    print(f"Last step mean BCE: {total_last_step_bce / len(data):.4f}")
+def test_cc(model: Model, data: list, device: torch.device, details: bool = False) -> None:
+    print("** TESTING CONNECTED COMPONENTS **")
+    model.eval()
 
-def test_dfs(model, data: list, device, details=False) -> None:
-    print("** TESTING DFS **")
-
-    total_score = 0
-    total_last_step_score = 0
+    total_acc = 0.0
+    total_last_step_acc = 0.0
     total_steps = 0
+    term_score = 0
 
-    for graph, source in data:
-        states = algorithms.compute_dfs_states(graph, source)
-
-        h = None
-        x = torch.tensor(states[0], dtype=torch.float32).unsqueeze(1).to(device)
-
-        with torch.no_grad():
-            for step in range(len(states) - 1):
-                state = states[step]
-                target = states[step + 1]
-
-                y_true = torch.tensor(target, dtype=torch.float32).unsqueeze(1).to(device)
-
-                y_pred, h, term_pred = model('DFS', graph, x, h)
-
-                bce = BCE(y_pred, y_true).item()
-                probs = torch.sigmoid(y_pred).squeeze(1).tolist()
-                prediction = [1 if p > 0.5 else 0 for p in probs]
-                visited_pred = [i for i, p in enumerate(probs) if p > 0.5]
-                visited_true = [i for i, v in enumerate(target) if v == 1.0]
-                score = sum(p == t for p, t in zip(prediction, target)) / len(target)
-
-                h = h.detach()
-
-                if details:
-                    print(f"Step {step}")
-                    for i in range(len(state)):
-                        print(f"  node {i}: input={state[i]:.0f}  prob={probs[i]:.2f} "
-                              f"prediction={prediction[i]} target={target[i]:.0f}")
-                    print(f"Visited prediction: {visited_pred}")
-                    print(f"Visited target:     {visited_true}")
-                    print(f"Termination: prob={torch.sigmoid(term_pred).item():.2f}"
-                          f"({'yes' if torch.sigmoid(term_pred).item() > 0.5 else 'no'}), "
-                          f"target={'yes' if step == len(states) - 2 else 'no'}")
-                    print("BCE:", bce)
-                    print()
-
-                total_score += score
-                total_steps += 1
-
-                x = torch.sigmoid(y_pred).detach()
-
-                if torch.sigmoid(term_pred).item() > 0.5:
-                    break
-
-            final_target = states[-1]
-            total_last_step_score += sum(p == t for p, t in zip(prediction, final_target)) / len(final_target)
-
-    print(f"Total score: {total_score / total_steps * 100:.2f}%")
-    print(f"Last step score: {total_last_step_score / len(data) * 100:.2f}%")
-
-
-def test_dijkstra(model, data: list, device, details=False) -> None:
-    print("** TESTING DIJKSTRA **")
-
-    total_mse = 0.0
-    total_pred_acc = 0.0
-    total_last_step_mse = 0.0
-    total_steps = 0
-
-    for graph, source in data:
-        states, preds, _ = algorithms.compute_dijkstra_states(graph, source)
+    for graph, _ in data:
+        states = algorithms.compute_cc_states(graph)
 
         if len(states) < 2:
             continue
@@ -292,54 +251,47 @@ def test_dijkstra(model, data: list, device, details=False) -> None:
             for step in range(len(states) - 1):
                 state = states[step]
                 target = states[step + 1]
-                pred = preds[step + 1]
 
-                y_true = torch.tensor(target, dtype=torch.float32).unsqueeze(1).to(device)
-                p_true = torch.tensor(pred, dtype=torch.long).to(device)
+                term_true = torch.tensor([1 if step == (len(states) - 2) else 0])
 
-                y, h, term_pred = model('Dijkstra', graph, x, h)
-
-                y_pred = y[0]
-                p_pred_scores = torch.stack(y[1])
-
-                mse = MSE(y_pred, y_true).item()
-                ce = CE(p_pred_scores, p_true).item()
-                p_pred = p_pred_scores.argmax(dim=1).tolist()
-                pred_acc = sum(p == t for p, t in zip(p_pred, pred)) / len(pred)
+                y_pred, _, h, term_pred = model('CC', graph, x, h)
+                term_prob = torch.sigmoid(term_pred).item()
 
                 h = h.detach()
 
+                comp_pred = [round(v) for v in y_pred.squeeze(1).tolist()]
+                comp_true = [round(v) for v in target]
+                acc = sum(p == t for p, t in zip(comp_pred, comp_true)) / len(comp_true)
+
                 if details:
                     print(f"Step {step}")
-                    for i in range(len(state)):
-                        print(f"  node {i}: dist={state[i]:.2f} -> pred={y_pred.squeeze(1)[i].item():.2f} "
-                              f"(target={target[i]:.2f})  "
-                              f"predecessor: pred={p_pred[i]} target={pred[i]}")
-                    print(f"MSE: {mse:.4f}  Predecessor CE: {ce:.4f}  Pred acc: {pred_acc*100:.1f}%")
-                    print(f"Termination: prob={torch.sigmoid(term_pred).item():.2f}"
-                          f"({'yes' if torch.sigmoid(term_pred).item() > 0.5 else 'no'}), "
-                          f"target={'yes' if step == len(states) - 2 else 'no'}")
+                    print(f"Prediction: {comp_pred}")
+                    print(f"Target:     {comp_true}")
+                    print(f"Accuracy: {acc * 100:.2f}%")
+                    print(f"Termination: prob={term_prob:.2f}"
+                          f" ({'yes' if term_prob > 0.5 else 'no'}), "
+                          f"target={'yes' if term_true.item() else 'no'}")
                     print()
 
-                total_mse += mse
-                total_pred_acc += pred_acc
+                total_acc += acc
                 total_steps += 1
+                term_score += (term_true == (term_prob > 0.5))
 
                 x = y_pred.detach()
 
-                if torch.sigmoid(term_pred).item() > 0.5:
+                if term_prob > 0.5:
                     break
 
-            final_target = states[-1]
-            total_last_step_mse += MSE(y_pred, torch.tensor(final_target, dtype=torch.float32).unsqueeze(1).to(device)).item()
+            final_comp_pred = [round(v) for v in y_pred.squeeze(1).tolist()]
+            final_comp_true = [round(v) for v in states[-1]]
+            total_last_step_acc += sum(p == t for p, t in zip(final_comp_pred, final_comp_true)) / len(final_comp_true)
 
-    print(f"Total mean MSE: {total_mse / total_steps:.4f}")
-    print(f"Total mean predecessor acc: {total_pred_acc / total_steps * 100:.2f}%")
-    print(f"Last step mean MSE: {total_last_step_mse / len(data):.4f}")
+    print(f"Total mean accuracy: {total_acc / total_steps * 100:.2f}%")
+    print(f"Last step accuracy: {total_last_step_acc / len(data) * 100:.2f}%")
+    print(f"Termination score: {term_score.item() / total_steps * 100:.2f}%")
 
-
-def test(test_size:int = 1, num_nodes:int = 20):
-    algos = ['BFS', 'BF', 'PRIM']
+def test(test_size: int = 1, num_nodes: int = 20, details: bool = True) -> None:
+    algos = ['BFS', 'BF', 'PRIM', 'CC']
     model = Model(algos, 1, 32, 1)
     model.load_state_dict(torch.load("parameters/model.pt", weights_only=True))
     model.eval()
@@ -349,7 +301,7 @@ def test(test_size:int = 1, num_nodes:int = 20):
     for _ in range(test_size):
         graph = random_graph(
             num_nodes=num_nodes,
-            p=0.3,
+            p=0.5,
             seed=None,
             self_loop=True,
             weighted=True,
@@ -360,13 +312,11 @@ def test(test_size:int = 1, num_nodes:int = 20):
         test_data.append((graph, source))
 
     device = next(model.parameters()).device
-    details = True
 
-    test_bfs(model, test_data, source, device, details)
+    #test_bfs(model, test_data, device, details)
     test_bf(model, test_data, device, details)
     #test_prim(model, test_data, device, details)
-    #test_dfs(model, graph, source)
-    #test_dijkstra(model, graph, source)
+    #test_cc(model, test_data, device, details)
 
 if __name__ == "__main__":
     test_size = 5

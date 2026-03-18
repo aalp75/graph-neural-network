@@ -6,7 +6,7 @@ import random
 def random_weight(weighted: bool, weight_mn: float, weight_mx: float) -> float:
     return random.uniform(weight_mn, weight_mx) if weighted else 1.0
 
-def add_self_loop(graph: Graph, weighted, weight_mn, weight_mx):
+def add_self_loop(graph: Graph, weighted: bool, weight_mn: float, weight_mx: float) -> Graph:
     for i in range(graph.num_nodes):
         graph.add_edge(i, i, random_weight(weighted, weight_mn, weight_mx))
     return graph
@@ -77,7 +77,7 @@ def random_tree(
     weight_mn: float = 0,
     weight_mx: float = 1,
     self_loop: bool = True,
-):
+) -> Graph:
     """
     Generates random tree based on Prufer sequence
     Implementation based on https://en.wikipedia.org/wiki/Pr%C3%BCfer_sequence
@@ -122,7 +122,6 @@ def random_graph(
         p: float = 0.5,
         seed: int | None = None, 
         weighted: bool = False,
-        connected: bool = True, # unused for now
         self_loop: bool = False,
         weight_mn: float = 0,
         weight_mx: float = 1,
@@ -148,15 +147,14 @@ def random_graph(
 
     return graph
 
-def barabis_albert_graph(
+def barabisi_albert_graph(
         num_nodes: int, 
         seed: int | None = None, 
         weighted: bool = False,
-        connected: bool = True, # unused for now
         self_loop: bool = True,
         weight_mn: float = 0,
         weight_mx: float = 1,
-):
+) -> Graph:
     """
     Graph with either 4 or 5 edges to every incoming node
     """
@@ -196,7 +194,7 @@ def community_graph(
     self_loop: bool = True,
     weight_mn: float = 0,
     weight_mx: float = 1,
-):
+) -> Graph:
     """
     Generates 4-Community graphs
     "first generating four disjoint Erdos-Rényi graphs with edge probability 0.7,
@@ -235,7 +233,7 @@ def caveman_graph(
     self_loop: bool = True,
     weight_mn: float = 0,
     weight_mx: float = 1,
-):
+) -> Graph:
     """
     4-Caveman (Watts, 1999)
     "graphs, having each of their intra-clique edges removed with probability 0.7,
@@ -258,7 +256,7 @@ def caveman_graph(
         edges_to_remove = []
         for node in range(new_graph.num_nodes):
             for neigh in range(node + 1, new_graph.num_nodes):
-                if random.random() > 0.7:
+                if random.random() < 0.7:
                     edges_to_remove.append((node, neigh))
             
         for u, v in edges_to_remove:
@@ -295,7 +293,7 @@ def generate_training_graphs(
             grid_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             random_tree(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             random_graph(num_nodes=num_nodes, p=0.3, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
-            barabis_albert_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
+            barabisi_albert_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             community_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             caveman_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
         ])

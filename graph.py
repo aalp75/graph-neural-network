@@ -9,6 +9,8 @@ class Graph:
         else:
             self.adj = adjacency_list
 
+        self.longest_path = None
+
     def add_edge(self, u: int, v: int, w: float = 1.0) -> None:
         self.adj[u].append((v, w))
         if u != v:
@@ -40,12 +42,38 @@ class Graph:
         for node in range(other.num_nodes):
             for neigh, weight in other.adj[node]:
                 self.adj[node + offset].append((neigh + offset, weight))
+
+    def compute_longest_path(self) -> float:
+        """
+        Compute longest shortest path using Floyd-Warshall
+        Time complexity is O(graph.num_nodes ^ 3)
+        """
+        n =self.num_nodes
+        dist = [[float('inf')] * n for _ in range(n)]
+
+        for u in range(n):
+            dist[u][u] = 0
+            for v, w in self.adj[u]:
+                dist[u][v] = min(dist[u][v], w)
+
+        for k in range(n):
+            for u in range(n):
+                for v in range(n):
+                    dist[u][v] = min(dist[u][v], dist[u][k] + dist[k][v])
+
+        self.longest_path = max(dist[u][v] for u in range(n) for v in range(n) if dist[u][v] < float('inf'))
+
+    def get_longest_path(self) -> float:
+        if self.longest_path is None:
+            self.compute_longest_path()
+        return self.longest_path
         
 if __name__ == "__main__":
     graph = Graph(3)
     graph.add_edge(0, 1, 5.3)
     graph.add_edge(0, 2, 2.5)
     print(graph)
+    print(graph.get_longest_path())
 
 
     
