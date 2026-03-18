@@ -5,7 +5,7 @@ from graph import Graph
 
 
 class Encoder(nn.Module):
-    def __init__(self, in_dim: int, hidden_dim: int):
+    def __init__(self, in_dim: int, hidden_dim: int) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
         self.proj = nn.Linear(in_dim + hidden_dim, hidden_dim)
@@ -19,7 +19,7 @@ class Encoder(nn.Module):
         return self.proj(inp)
 
 class Decoder(nn.Module):
-    def __init__(self, hidden_dim: int, out_dim: int):
+    def __init__(self, hidden_dim: int, out_dim: int) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
         self.proj = nn.Linear(2 * hidden_dim, out_dim)
@@ -29,15 +29,14 @@ class Decoder(nn.Module):
         return self.proj(inp)
     
 class Predecessor(nn.Module):
-    def __init__(self, hidden_dim: int):
+    def __init__(self, hidden_dim: int) -> None:
         super().__init__()
         self.proj = nn.Linear(2 * hidden_dim + 1, 1)
 
-    def forward(self, graph: Graph, h:torch.Tensor):
+    def forward(self, graph: Graph, h: torch.Tensor) -> list:
         pred_scores = []
-        n = graph.num_nodes
         for node in range(graph.num_nodes):
-            scores = [torch.zeros(1, device=h.device, dtype=h.dtype) for _ in range(graph.num_nodes)]
+            scores = [torch.full((1,), float('-inf'), device=h.device, dtype=h.dtype) for _ in range(graph.num_nodes)]
             for neigh, weight in graph.adj[node]:
                 if neigh == node:  # skip self-loops
                     continue
@@ -50,11 +49,9 @@ class Predecessor(nn.Module):
 
 
 class Processor(nn.Module):
-    def __init__(self, hidden_dim: int):
+    def __init__(self, hidden_dim: int) -> None:
         super().__init__()
-        self.message = nn.Sequential(
-            nn.Linear(2 * hidden_dim + 1, hidden_dim),
-        )
+        self.message = nn.Linear(2 * hidden_dim + 1, hidden_dim)
 
         self.update = nn.Sequential(
             nn.Linear(2 * hidden_dim, hidden_dim),
@@ -87,17 +84,17 @@ class Processor(nn.Module):
         return torch.stack(h, dim=0)
     
 class Termination(nn.Module):
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim: int) -> None:
         super().__init__()
         self.term = nn.Linear(2 * hidden_dim, 1)
 
-    def forward(self, h):
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
         h_bar = torch.mean(h, dim=0, keepdim=True).expand(h.size(0), -1)  # [n, hidden_dim]
         logits = self.term(torch.cat([h, h_bar], dim=1))  # [n, 1]
         return logits.mean()
 
 class Model(nn.Module):
-    def __init__(self, algos: list, in_dim: int, hidden_dim: int, out_dim: int):
+    def __init__(self, algos: list, in_dim: int, hidden_dim: int, out_dim: int) -> None:
         super().__init__()
 
         self.algos = algos
@@ -106,6 +103,7 @@ class Model(nn.Module):
 
         self.encoders = nn.ModuleDict({a: Encoder(in_dim, hidden_dim) for a in algos})
         self.decoders = nn.ModuleDict({a: Decoder(hidden_dim, out_dim) for a in algos})
+        
         self.terminations = nn.ModuleDict({a: Termination(hidden_dim) for a in algos})
 
         self.predecessor = Predecessor(hidden_dim)
@@ -116,7 +114,7 @@ class Model(nn.Module):
                 graph: Graph, 
                 x: torch.Tensor, 
                 h: torch.Tensor | None = None
-    ):
+    ) -> tuple:
         
         if algo not in self.algos:
             raise ValueError(f"Unknown algorithm: {algo}")
@@ -130,6 +128,6 @@ class Model(nn.Module):
         return y, p, h, t
 
 if __name__ == "__main__":
-    algos = ['BFS', 'BF']
+    algos = ['BFS', 'BF', 'PRIM', 'CC']
     model = Model(algos, 1, 32, 1)
     
