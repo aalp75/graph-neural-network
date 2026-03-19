@@ -1,7 +1,7 @@
 from graph import Graph
 
 """
-List of implemented algorithms:
+Algorithms:
 
 - Breadth-First-Search (BFS)
 - Bellman-Ford (BF)
@@ -9,21 +9,23 @@ List of implemented algorithms:
 - Connected Components (CC)
 """
 
+def simulate_bfs(graph: Graph, state: list) -> list:
+    next_state = state.copy()
+    for node in range(graph.num_nodes):
+        if state[node] == 1.:
+            for neigh, weight in graph.adj[node]:
+                next_state[neigh] = 1
+
+    return next_state
+
 def compute_bfs_states(graph: Graph, source: int) -> list:
-    state = [0.] * graph.num_nodes
-    state[source] = 1.
+    state = [0 if i != source else 1 for i in range(graph.num_nodes)]
 
     states = [state.copy()]
 
     while True:
-        next_state = state.copy()
-        for node in range(graph.num_nodes):
-            if state[node] == 1.:
-                for edge in graph.adj[node]:
-                    neigh = edge[0]
-                    next_state[neigh] = 1.
+        next_state = simulate_bfs(graph, state)
 
-                    
         if next_state == state:
             break
         state = next_state
@@ -31,14 +33,23 @@ def compute_bfs_states(graph: Graph, source: int) -> list:
 
     return states
 
-def compute_bf_states(graph: Graph, source:int) -> tuple:
+def simulate_bf(graph: Graph, state:list, parent:list) -> tuple:
+    next_state = state.copy()
+    next_parent = parent.copy()
+    for node in range(graph.num_nodes):
+        for neigh, weight in graph.adj[node]:
+            if state[node] + weight < next_state[neigh]:
+                next_state[neigh] = state[node] + weight
+                next_parent[neigh] = node
 
-    n = graph.num_nodes
+    return next_state, next_parent
+
+def compute_bf_states(graph: Graph, source:int) -> tuple:
 
     inf = graph.get_longest_path() + 1
 
-    state = [inf] * graph.num_nodes # max value is n
-    parent = [source] * n
+    state = [inf] * graph.num_nodes
+    parent = [source] * graph.num_nodes
 
     state[source] = 0.0
     parent[source] = source
@@ -46,14 +57,8 @@ def compute_bf_states(graph: Graph, source:int) -> tuple:
     states = [state.copy()]
     parents = [parent.copy()]
 
-    for _ in range(n):
-        next_state = state.copy()
-        next_parent = parent.copy()
-        for node in range(graph.num_nodes):
-            for neigh, weight in graph.adj[node]:
-                if state[node] + weight < next_state[neigh]:
-                    next_state[neigh] = state[node] + weight
-                    next_parent[neigh] = node
+    for _ in range(graph.num_nodes):
+        next_state, next_parent = simulate_bf(graph, state, parent)
 
         if next_state == state:
             break
@@ -69,7 +74,7 @@ def compute_prim_states(graph: Graph, source: int) -> tuple:
 
     n = graph.num_nodes
 
-    state = [0] * graph.num_nodes # max value is n
+    state = [0] * graph.num_nodes
     parent = [source] * n
 
     state[source] = 1
@@ -82,7 +87,7 @@ def compute_prim_states(graph: Graph, source: int) -> tuple:
         next_state = state.copy()
         next_parent = parent.copy()
 
-        best_node = -1 # node not discovered with the smallest edge
+        best_node = -1 # # undiscovered node with the smallest connecting edge
         best_parent = 0
         best_weight = float('inf')
 
@@ -146,8 +151,7 @@ def generate_examples(states: list, parents: list | None = None) -> list:
     return data
 
 if __name__ == "__main__":
-    ## BFS
-
+    
     adj = [
         [(0, 1.0), (1, 1.0), (2, 1.0)],
         [(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)],
@@ -159,6 +163,7 @@ if __name__ == "__main__":
     g = Graph(5, adj)
     print(g)
 
+    ## BFS
     print("\n-- Breadth First Search --")
     states = compute_bfs_states(g, 0)
     for ite, state in enumerate(states):

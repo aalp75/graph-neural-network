@@ -7,7 +7,6 @@ references/
 parameters/
 
 # LaTeX build files
-report/
 *.aux
 *.log
 *.out

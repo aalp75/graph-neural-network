@@ -1,0 +1,254 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[expansion=false]{microtype}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{titling}
+\setlength{\droptitle}{-4em}
+\usepackage[colorlinks=true, linkcolor=blue!60!black, citecolor=blue!60!black, urlcolor=blue!60!black]{hyperref}
+
+\definecolor{accent}{RGB}{0, 80, 150}
+
+\titleformat{\section}{\large\bfseries\color{accent}}{}{0em}{}[\vspace{-4pt}\textcolor{accent}{\rule{\linewidth}{0.8pt}}]
+\titleformat{\subsection}{\normalsize\bfseries\color{accent!80!black}}{}{0em}{}
+
+\setlist[itemize]{label=\textcolor{accent}{--}, itemsep=0pt, topsep=0pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+
+\title{\textbf{\textcolor{accent}{Implementation Report}}}
+\date{}
+
+\begin{document}
+
+\maketitle
+\vspace{-5em}
+
+\section{Introduction}
+
+This repository aims to implement the paper \textit{Neural Execution of Graph Algorithms}~\cite{velickovic2019neural} and to reproduce the results. In addition to the original tasks, it includes an extension to the connected components algorithm.
+
+This report provides a concise overview of the implementation, experimental setup, and results, and serves as supporting notes to better understand both the repository and the model.
+
+\section{Method}
+
+\subsection{Graph Generation}
+
+Following the original paper, the training data is generated using seven types of random graphs:
+\begin{itemize}
+\item Ladder graphs
+\item 2D grid graphs
+\item Trees (generated using Pr\"ufer sequences)
+\item Erd\H{o}s--R\'enyi graphs
+\item Barab\'asi--Albert graphs
+\item 4-community graphs
+\item 4-caveman graphs
+\end{itemize}
+
+\subsection{Model Architecture}
+
+The repository implements the maximisation-based Message Passing Neural Network (MPNN)~\cite{gilmer2017neural}, which is the best-performing model reported in the original paper.
+
+The architecture consists of:
+\begin{itemize}
+\item an \textbf{encoder} $f_A$ and a \textbf{decoder} $g_A$, both defined per algorithm,
+\item a shared \textbf{processor} $P$,
+\item a \textbf{predecessor network} $R$ for tasks such as Bellman-Ford and Prim,
+\item a \textbf{termination network} $T_A$ predicting when the algorithm should stop.
+\end{itemize}
+
+Compare to the original paper the termination newtowkr has been slighly modified. Additional details can be found in~\cite{velickovic2022clrs} and the computation pipeline can be described as follows:
+
+\[
+\begin{aligned}
+&
+&&
+\;\xrightarrow{\makebox[1.5cm]{\text{Decoder}}}\; y^t = g_A(h^t, z^t)
+\\[8pt]
+(x^{t}, h^{t-1}, G)
+&\;\xrightarrow{\makebox[1.5cm]{\text{Encoder}}}\;
+z^{t} = f_A(x^{t}, h^{t-1}) \;\xrightarrow{\makebox[1.5cm]{\text{Processor}}}\;
+h^{(t+1)} = P(z^t, G)
+&&
+\;\xrightarrow{\makebox[1.5cm]{\text{Predecessor}}}\; \pi^t=R(h^t, G)
+\\[8pt]
+&&&
+\;\xrightarrow{\makebox[1.5cm]{\text{Termination}}}\; \tau^{(t)} = T_A(h^t, \bar{h}^t, y^t)
+\end{aligned}
+\]
+
+Let $N$ be the number of nodes and $K$ the latent dimension. The variables have the following shapes:
+\[
+x \in \mathbb{R}^{N}, \quad
+z \in \mathbb{R}^{N \times K}, \quad
+h \in \mathbb{R}^{N \times K}, \quad
+y \in \mathbb{R}^{N}, \quad
+\pi \in \mathbb{R}^{N \times N}, \quad
+\tau \in \mathbb{R}.
+\]
+
+The loss function depends on the algorithm. Prim's algorithm is trained to predict the next node in the MST.
+\begin{itemize}
+\item Mean Squared Error (MSE): Bellman-Ford distances, Connected Components
+\item Binary Cross-Entropy (BCE): BFS reachability and termination prediction
+\item Categorical Cross-Entropy (CE): Prim's next node selection and predecessor prediction
+\end{itemize}
+
+Experimental setup:
+\begin{itemize}
+    \item Latent dimension $K = 32$
+    \item Optimizer Adam
+    \item Learning rate $5 \times 10^{-4}$
+\end{itemize}
+
+The implementation is done using PyTorch (2.10.0)
+
+\subsection{Train}
+
+The model is trained on a dataset composed of 100 graphs per category (700 in total). Early stopping is applied based on a validation set (20 graphs per category, 140 in total) with a patience of 10 epochs. We add a minimum number of epochs because he training phase is very unstable at start due to the termination process which seems slow to learn. Training takes approximately one hour on a CPU/GPU setup (Intel Core i7-12700K/RTX 4060 Ti)
+
+\subsection{Test}
+
+The model is tested on a set of 20 random graphs of varying numbers of nodes. Increasing the number of nodes allows us to assess how well the model has learned the algorithms, i.e., whether it is able to generalise the algorithmic reasoning.
+
+\section{Results}
+
+In this section, we compare the results of our implementation with those reported in the original paper.
+
+\subsection{BFS}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\multirow{2}{*}{\textbf{Model MPNN-max}} &
+\multicolumn{3}{c}{\textbf{Reachability (mean step accuracy / last-step accuracy)}} \\
+& \textit{20 nodes} & \textit{50 nodes} & \textit{100 nodes} \\
+\midrule
+Paper
+& 100.0\% / 100.0\%
+& 100.0\% / 100.0\%
+& 99.92\% / 99.80\% \\
+\midrule
+Repository
+& 100.0\% / 100.0\%
+& 100.0\% / 100.0\%
+& 100.0\% / 98.13\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Bellman-Ford}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\multirow{2}{*}{\textbf{Model MPNN-max}} &
+\multicolumn{3}{c}{\textbf{B-F (mean squared error / mean termination accuracy)}} \\
+& \textit{20 nodes} & \textit{50 nodes} & \textit{100 nodes} \\
+\midrule
+Paper
+& 0.005 / 98.89\%
+& 0.013 / 98.58\%
+& 0.238 / 97.82\% \\
+\midrule
+Repository
+& 0.013 / 93.33\%
+& 0.034 / 89.99\%
+& 0.670 / 86.57\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\multirow{2}{*}{\textbf{Model MPNN-max}} &
+\multicolumn{3}{c}{\textbf{B-F Predecessor (mean step accuracy / last-step accuracy)}} \\
+& \textit{20 nodes} & \textit{50 nodes} & \textit{100 nodes} \\
+\midrule
+Paper
+& 97.13\% / 96.84\%
+& 94.71\% / 93.88\%
+& 90/91\% / 88.79\% \\
+\midrule
+Repository
+& 92.59\% / 91.58\%
+& \% / 81.22\%
+& 85.52\% / 80.18\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Prim}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\multirow{2}{*}{\textbf{Model MPNN-max}} &
+\multicolumn{3}{c}{\textbf{Prim Accuracy (next MST node / MST predecessor)}} \\
+& \textit{20 nodes} & \textit{50 nodes} & \textit{100 nodes} \\
+\midrule
+Paper
+& 90.56\% / 93.63\%
+& 52.23\% / 88.97\%
+& 41.37\% / 90.02\% \\
+\midrule
+Repository
+& 94.74\% / 75.26\%
+& 48.57\% / 55.67\%
+& 27.75\% / 89.90\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Extension}
+
+\subsection{Details}
+
+The framework requires algorithms to be Markovian processes, i.e., the next state depends only on the current state. Algorithms such as DFS are non-Markovian and cannot be trained in this framework. Dijkstra's algorithm can be reformulated in a Markovian way by augmenting the node features with a visited state, but this would significantly increase the complexity of the code.
+
+A natural extension of the framework is connected components (CC), which can be formulated as a Markovian process as follows:
+
+\[
+\text{CC : }x_i^{(1)} = i \hspace{3cm} \text{CC : }x_i^{(t+1)} = \min_{j \in \mathcal{N}_i} (x_i^{(t)}, x_j^{(t)})
+\]
+
+\subsection{Results}
+
+Connected components is an algorithm closely related to BFS, so strong results are expected. It can be interpreted as a multi-source BFS. Unlike the original paper, which primarily focuses on connected graphs, it has been tested on sparser graphs with multiple components to fully assess the performance of the algorithm.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\multirow{2}{*}{\textbf{Model MPNN-max}} &
+\multicolumn{3}{c}{\textbf{CC (Component accuracy / Termination accuracy)}} \\
+& \textit{20 nodes} & \textit{50 nodes} & \textit{100 nodes} \\
+\midrule
+Repository
+& 99.67\% / 98.94\%
+& 96.86\% / 94.75\%
+& 95.32\% / 92.40\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\bibliographystyle{unsrt}
+\bibliography{references}
+
+\end{document}

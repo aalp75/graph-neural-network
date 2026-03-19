@@ -4,27 +4,28 @@ from pathlib import Path
 
 from graph import Graph
 from model import Model
-from graph_generation import random_graph, generate_training_graphs
+from graph_generation import generate_training_graphs
 import algorithms as algorithms
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
-LAMBDA = 0.2 # used to split the loss between state and predecessors
+PRED_LAMBDA = 0.2 # used to split the loss between state and predecessors
+TERM_LAMBDA = 0.05 # used to split the loss between state and termination
 
 BCE = nn.BCEWithLogitsLoss()
 MSE = nn.MSELoss()
 CE = nn.CrossEntropyLoss()
 
-
 def termination_bce(term_pred: torch.Tensor, term_true: torch.Tensor, num_steps: int) -> torch.Tensor:
     """
-    Balance between 0 and 1 for the termination prediction because the 0 appears 
-    more than 1
+    Weighted BCE for termination prediction: 0 appears more than 1
     """
-    pos_weight = torch.tensor(float(num_steps - 1), device=term_pred.device)
-    return nn.BCEWithLogitsLoss(pos_weight=pos_weight)(term_pred, term_true)
+    #print(f"term prediction {torch.sigmoid(term_pred).item()}: term target: {term_true}")
+    pos_weight = torch.tensor([float(num_steps - 1)], device=term_pred.device)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    return criterion(term_pred.view(1), term_true.view(1))
 
 def compute_loss(algo: str,
                  y_pred: torch.Tensor, y_true: torch.Tensor,
@@ -40,25 +41,40 @@ def compute_loss(algo: str,
         case 'BFS':
             state_loss = BCE(y_pred, y_true)
         case 'BF' | 'CC':
-            state_loss = MSE(y_pred, y_true)
+            n = y_pred.shape[0]
+            state_loss = MSE(y_pred / n, y_true / n)
         case 'PRIM':
             mask = torch.tensor([float('-inf') if state[j] == 1 else 0.0 for j in range(len(state))], device=y_pred.device, dtype=y_pred.dtype)
             state_loss = CE((y_pred.squeeze(1) + mask).unsqueeze(0), next_node)
 
-    parent_loss = 0.0
+    parent_loss = torch.tensor(0.0, device=device)
     if reachable:
         idx = torch.tensor(reachable, device=device)
-        parent_loss = LAMBDA * CE(p_pred[idx], p_true[idx])
+        parent_loss = PRED_LAMBDA * CE(p_pred[idx], p_true[idx])
 
-    return state_loss + termination_bce(term_pred, term_true, num_steps) + parent_loss
+    #print("state loss:", state_loss)
+    #print("termination loss:", termination_bce(term_pred, term_true, num_steps))
+    #print("parent loss: ", parent_loss)
+    return state_loss, parent_loss, termination_bce(term_pred, term_true, num_steps)
 
-def evaluate_algo(algo: str, model: Model, graph: Graph, source: int, device: torch.device, optimizer: optim.Optimizer | None = None, train: bool = True) -> tuple:
+def evaluate_algo(algo: str, 
+                  model: Model, 
+                  graph: Graph, 
+                  source: int, 
+                  device: torch.device, 
+                  optimizer: optim.Optimizer | None = None, 
+                  train: bool = True
+) -> tuple:
     states, parents, inf, _ = algorithms.compute_states(algo, graph, source)
     examples = algorithms.generate_examples(states, parents)
 
-    h = None
-    total_loss = 0.0
-    accumulated_loss = None
+    h = torch.zeros(graph.num_nodes, model.hidden_dim, device=device)
+    total_state_loss = 0.0
+    total_parent_loss = 0.0
+    total_term_loss = 0.0
+    accumulated_state_loss = None
+    accumulated_parent_loss = None
+    accumulated_term_loss = None
     num_steps = 0
 
     for i, (state, next_state, parent) in enumerate(examples):
@@ -84,29 +100,37 @@ def evaluate_algo(algo: str, model: Model, graph: Graph, source: int, device: to
                 reachable = []
 
         y_pred, p_pred, h, term_pred = model(algo, graph, x, h)
-        p_pred = torch.stack(p_pred)
 
-        loss = compute_loss(algo, y_pred, y_true, p_pred, p_true, term_pred, term_true, reachable, len(examples), device, next_node, state)
+        state_loss, parent_loss, term_loss = compute_loss(algo, y_pred, y_true, p_pred, p_true, term_pred, term_true, reachable, len(examples), device, next_node, state)
 
-        accumulated_loss = loss if accumulated_loss is None else accumulated_loss + loss
+        accumulated_state_loss = state_loss if accumulated_state_loss is None else accumulated_state_loss + state_loss
+        accumulated_parent_loss = parent_loss if accumulated_parent_loss is None else accumulated_parent_loss + parent_loss
+        accumulated_term_loss = term_loss if accumulated_term_loss is None else accumulated_term_loss + term_loss
         h = h.detach()
-        total_loss += loss.item()
+        total_state_loss += state_loss.item()
+        total_parent_loss += parent_loss.item()
+        total_term_loss += term_loss.item()
         num_steps += 1
 
-    if train and accumulated_loss is not None:
+    if train and accumulated_state_loss is not None:
         optimizer.zero_grad()
-        accumulated_loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        (accumulated_state_loss / num_steps + accumulated_parent_loss / num_steps + TERM_LAMBDA * accumulated_term_loss / num_steps).backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
         optimizer.step()
 
-    return total_loss, num_steps
+    return total_state_loss, total_parent_loss, total_term_loss, num_steps
 
 def evaluate(model: Model, data: list, device: torch.device, optimizer: optim.Optimizer | None = None, train: bool = False) -> float:
     """
-    Compute average loss on a dataset without updating weights
+    Compute average loss on a dataset
+    inputs:
+        train: update the weights of the model
     """
 
     total_loss = 0.0
+    total_state_loss = 0.0
+    total_parent_loss = 0.0
+    total_term_loss = 0.0
     total_steps = 0
 
     if train:
@@ -118,24 +142,28 @@ def evaluate(model: Model, data: list, device: torch.device, optimizer: optim.Op
     with torch.set_grad_enabled(train):
         for graph, source in data:
             for algo in model.algos:
-                loss, steps = evaluate_algo(algo, model, graph, source, device, optimizer, train=train)
-                total_loss  += loss
-                total_steps += steps
+                state_loss, parent_loss, term_loss, steps = evaluate_algo(algo, model, graph, source, device, optimizer, train=train)
+                total_state_loss  += state_loss
+                total_parent_loss += parent_loss
+                total_term_loss   += term_loss
+                total_loss        += state_loss + parent_loss + TERM_LAMBDA * term_loss
+                total_steps       += steps
 
-    return total_loss / total_steps
+    return total_loss / total_steps, total_state_loss / total_steps, total_parent_loss / total_steps, total_term_loss / total_steps
 
 def train(model: Model,
-          train_size: int,
-          val_size: int,
-          num_nodes: int, 
-          num_epochs: int, 
+          train_size: int = 20,
+          val_size: int = 5,
+          num_nodes: int = 20,
+          epochs: int = 5,
+          min_epochs: int = 5,
           lr:float = 0.0005,
           patience:int = 10,
           verbose:bool = True, 
           save: bool = False,
 ) -> None:
     """
-    train function
+    Train the model with early stopping on validation loss"
     """
     
     print("Generating training data...", end=' ')
@@ -145,9 +173,12 @@ def train(model: Model,
     val_data =  generate_training_graphs(by_category=val_size, num_nodes=num_nodes,
                                           weighted=True, weight_mn=0.2, weight_mx=2.0)
     
-    print("Generated!")
-    
     device = next(model.parameters()).device
+    
+    for graph, source in train_data + val_data:
+        graph.get_edges_tensor(device, torch.float32)
+    
+    print("Generated!")
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
@@ -158,25 +189,33 @@ def train(model: Model,
 
     print("Start training process...")
 
-    for epoch in range(num_epochs):
+    # TODO: precompute all stats and cache it
 
-        train_loss = evaluate(model, train_data, device, optimizer, train=True)
-        val_loss = evaluate(model, val_data, device, None, train=False)
+    for epoch in range(epochs):
+
+        train_loss, train_state_loss, train_parent_loss, train_term_loss = evaluate(model, train_data, device, optimizer, train=True)
+        val_loss, val_state_loss, val_parent_loss, val_term_loss = evaluate(model, val_data, device, None, train=False)
 
         if verbose:
-            print(f"Epoch {epoch} | train loss = {train_loss:.4f} | val loss = {val_loss:.4f}")
+            print(f"Epoch {epoch} | train loss = {train_loss:.4f} (state={train_state_loss:.4f}, parent={train_parent_loss:.4f}, term={train_term_loss:.4f}) | val loss = {val_loss:.4f} (state={val_state_loss:.4f}, parent={val_parent_loss:.4f}, term={val_term_loss:.4f})")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_params = copy.deepcopy(model.state_dict())
             patience_counter = 0
+
+            if save:
+                Path("parameters").mkdir(parents=True, exist_ok=True)
+                print(f"New best loss {best_val_loss}, parameters saved!")
+                torch.save(model.state_dict(), "parameters/model.pt")
         else:
             patience_counter += 1
-            if patience_counter >= patience:
+            if patience_counter >= patience and epoch >= min_epochs:
                 print(f"Early stopping at epoch {epoch}")
                 break
 
     if best_params is not None:
+        print(f"best val loss = {best_val_loss:.4f}")
         model.load_state_dict(best_params)
     if save:
         Path("parameters").mkdir(parents=True, exist_ok=True)
@@ -187,18 +226,22 @@ if __name__ == "__main__":
     print(f"Training on {device}")
     algos = ['BFS', 'BF', 'PRIM', 'CC']
     model = Model(algos, 1, 32, 1).to(device) # train on GPU if available
-    train_size = 10 # number of graph of each category (7 category in total)
-    val_size = 5
-    num_nodes = 10
-    num_epochs = 50
-    patience = 10
-    train(model, 
-          train_size, 
-          val_size, 
-          num_nodes, 
-          num_epochs, 
-          lr=0.0005,
-          patience=10, 
-          verbose=True, 
+    torch.set_float32_matmul_precision('high')
+    #model = torch.compile(model)
+    train_size = 100 # number of graph of each category (7 category in total)
+    val_size = 20
+    num_nodes = 20
+    epochs = 400
+    min_epochs = 300
+    patience = 50
+    train(model,
+          train_size=train_size,
+          val_size=val_size, 
+          num_nodes=num_nodes, 
+          epochs=epochs,
+          min_epochs=min_epochs,
+          lr=5e-4,
+          patience=patience,
+          verbose=True,
           save=True
     )

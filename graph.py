@@ -1,3 +1,5 @@
+import torch
+
 class Graph:
     """
     Graph is represented as an adjacency list [neighbour, weight]
@@ -10,6 +12,7 @@ class Graph:
             self.adj = adjacency_list
 
         self.longest_path = None
+        self.edges_tensor = None # used for the neural network input
 
     def add_edge(self, u: int, v: int, w: float = 1.0) -> None:
         self.adj[u].append((v, w))
@@ -67,6 +70,27 @@ class Graph:
         if self.longest_path is None:
             self.compute_longest_path()
         return self.longest_path
+    
+    def edges_to_tensor(self, device: torch.device = None, dtype: torch.dtype = None) -> None:
+        """
+        Convert edges to tensors and cache them to speed up neural network computation
+        """
+        sources, dists, weights = [], [], []
+        for node in range(self.num_nodes):
+            for neigh, weight in self.adj[node]:
+                sources.append(node)
+                dists.append(neigh)
+                weights.append(weight)
+        self.edges_tensor = (
+            torch.tensor(sources, device=device),
+            torch.tensor(dists, device=device),
+            torch.tensor(weights, device=device, dtype=dtype).unsqueeze(1),
+        )
+
+    def get_edges_tensor(self, device, dtype) -> tuple:
+        if self.edges_tensor is None:
+            self.edges_to_tensor(device, dtype)
+        return self.edges_tensor
         
 if __name__ == "__main__":
     graph = Graph(3)

@@ -161,7 +161,7 @@ def barabisi_albert_graph(
 
     graph = Graph(num_nodes)
 
-    processed = [] # keep tracks of node already in the graph
+    processed = [] # keeps track of node already in the graph
 
     # start with a fully connected graph
     for node in range(min(num_nodes, 5)):
@@ -172,9 +172,7 @@ def barabisi_albert_graph(
 
     for node in range(5, num_nodes):
         # add 4 or 5 edges
-        edges = 4
-        if random.random() < 0.5:
-            edges = 5
+        edges = 4 if random.random() < 0.5 else 5
         neighs = random.sample(processed, edges)
         for neigh in neighs:
             w = random_weight(weighted, weight_mn, weight_mx)
@@ -287,12 +285,13 @@ def generate_training_graphs(
     weight_mx: float = 1,
 ) -> list:
     graphs = []
+    p = min(0.5, math.log2(num_nodes) / num_nodes)
     for _ in range(by_category):
         graphs.extend([
             ladder_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             grid_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             random_tree(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
-            random_graph(num_nodes=num_nodes, p=0.3, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
+            random_graph(num_nodes=num_nodes, p=p, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             barabisi_albert_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             community_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             caveman_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
@@ -303,19 +302,17 @@ def generate_training_graphs(
 
 if __name__ == "__main__":
     num_nodes = 5
-    p = 0.5
     g = random_graph(num_nodes,
-                     p=p,
+                     p=0.3,
                      weighted=True,
-                     connected=True,
-                     self_loop=True,
-                     weight_mn=0,
-                     weight_mx=2
+                     self_loop=False,
+                     weight_mn=0.0,
+                     weight_mx=1.0
     )
     print(g)
 
     tree = random_tree(num_nodes)
     print(tree)
 
-    barabis_albert = barabis_albert_graph(7)
+    barabis_albert = barabisi_albert_graph(7)
     print(barabis_albert)
