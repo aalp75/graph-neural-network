@@ -20,8 +20,8 @@ TERM_LAMBDA = 0.2 # used to split the loss between state and termination
 BCE = nn.BCEWithLogitsLoss()
 MSE = nn.MSELoss()
 CE = nn.CrossEntropyLoss()
-# put more weights on 1 for the termination loss
-BCE_TERM = torch.nn.BCEWithLogitsLoss()  # move to device before use
+# pos_weight moved to device in train function
+BCE_TERM = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(5.0))  
 
 def compute_state_loss(algo: str, start: torch.tensor, pred: torch.tensor, expected: torch.tensor):
     if algo == 'bfs':
@@ -76,11 +76,9 @@ def evaluate_algo(algo: str,
 
         state_loss = compute_state_loss(algo, state, state_pred, next_state)
         predec_loss = torch.tensor(0.0, device=state.device)
-        if reachable.any():
+        if reachable.any(): # skip for some algorithms (e.g. bfs)
             predec_loss = CE(p_pred[reachable], predecessors[reachable])
-        term_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            term_pred, termination, pos_weight=torch.tensor(5.0, device=termination.device)
-        )
+        term_loss = BCE_TERM(term_pred, termination)
 
         acc_state_loss = state_loss if acc_state_loss is None else acc_state_loss + state_loss
         acc_predec_loss = predec_loss if acc_predec_loss is None else acc_predec_loss + predec_loss
@@ -90,7 +88,7 @@ def evaluate_algo(algo: str,
         num_steps += 1
 
     if acc_state_loss is None:
-        return 0.0, 0.0, 0.0, 0
+        return {'state': 0.0, 'predec': 0.0, 'term': 0.0, 'steps': 0}
 
     total_loss = acc_state_loss + PREDEC_LAMBDA * acc_predec_loss + TERM_LAMBDA * acc_term_loss
 
@@ -100,27 +98,26 @@ def evaluate_algo(algo: str,
         torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
         optimizer.step()
 
-    return acc_state_loss.item(), acc_predec_loss.item(), acc_term_loss.item(), num_steps
+    return {
+        'state': acc_state_loss.item(),
+        'predec': acc_predec_loss.item(),
+        'term': acc_term_loss.item(),
+        'steps': num_steps,
+    }
 
-def evaluate(model: Model, 
-             data: list, 
-             device: torch.device, 
-             optimizer: optim.Optimizer | None = None, 
+def evaluate(model: Model,
+             data: list,
+             device: torch.device,
+             optimizer: optim.Optimizer | None = None,
              train: bool = False
-) -> float:
+) -> dict:
     """
     Compute average loss on a dataset
     inputs:
         train: update the weights of the model
     """
 
-    total_loss = 0.0
-
-    total_state_loss = 0.0
-    total_predec_loss = 0.0
-    total_term_loss = 0.0
-
-    total_steps = 0
+    loss = {'state': 0.0, 'predec': 0.0, 'term': 0.0, 'steps': 0}
 
     if train:
         model.train()
@@ -129,16 +126,28 @@ def evaluate(model: Model,
         model.eval()
 
     with torch.set_grad_enabled(train):
-        for algo, graph, source, sample, inf in data:
-            state_loss, predec_loss, term_loss, steps = evaluate_algo(algo, model, graph, source, sample, inf, device, optimizer, train=train)
-            
-            total_state_loss += state_loss
-            total_predec_loss += predec_loss
-            total_term_loss += term_loss
-            total_loss += state_loss + PREDEC_LAMBDA * predec_loss + TERM_LAMBDA * term_loss
-            total_steps += steps
+        for algo, graph, source, sample, max_dist in data:
+            result = evaluate_algo(algo, 
+                                   model, 
+                                   graph, 
+                                   source, 
+                                   sample, 
+                                   max_dist, 
+                                   device, 
+                                   optimizer, 
+                                   train=train
+            )
+            for k in ('state', 'predec', 'term', 'steps'):
+                loss[k] += result[k]
 
-    return total_loss / total_steps, total_state_loss / total_steps, total_predec_loss / total_steps, total_term_loss / total_steps
+    n = loss['steps']
+    total_loss = (loss['state'] + PREDEC_LAMBDA * loss['predec'] + TERM_LAMBDA * loss['term']) / n
+    return {
+        'total': total_loss,
+        'state': loss['state'] / n,
+        'predec': loss['predec'] / n,
+        'term': loss['term'] / n,
+    }
 
 def generate_data(size: int, num_nodes: int, algos: list, device: torch.device):
     data = []
@@ -175,12 +184,11 @@ def train(model: Model,
           verbose:bool = True,
           save: bool = False,
 ) -> None:
-    """
-    Train the model with early stopping on validation loss"
-    """
+    """Train the model with early stopping on validation loss"""
     
     print("Generating training data...", end=' ')
     device = next(model.parameters()).device
+    BCE_TERM.pos_weight = BCE_TERM.pos_weight.to(device)
     train_data = generate_data(train_size, num_nodes, model.algos, device)
     val_data =  generate_data(val_size, num_nodes, model.algos, device)    
     print("Generated!")
@@ -197,22 +205,22 @@ def train(model: Model,
     start_time = time.time()
     for epoch in range(epochs): 
 
-        train_loss, train_state_loss, train_predec_loss, train_term_loss = evaluate(model, train_data, device, optimizer, train=True)
-        val_loss, val_state_loss, val_predec_loss, val_term_loss = evaluate(model, val_data, device, None, train=False)
+        train_loss = evaluate(model, train_data, device, optimizer, train=True)
+        val_loss = evaluate(model, val_data, device, None, train=False)
 
         if verbose:
             print(f"Epoch {epoch + 1} | "
-                  f"train loss = {train_loss:.2f} (state={train_state_loss:.2f}, predec={train_predec_loss:.2f}, term={train_term_loss:.2f}) | "
-                  f"val loss = {val_loss:.2f} (state={val_state_loss:.2f}, predec={val_predec_loss:.2f}, term={val_term_loss:.2f})")
+                  f"train loss = {train_loss['total']:.2f} (state={train_loss['state']:.2f}, predec={train_loss['predec']:.2f}, term={train_loss['term']:.2f}) | "
+                  f"val loss = {val_loss['total']:.2f} (state={val_loss['state']:.2f}, predec={val_loss['predec']:.2f}, term={val_loss['term']:.2f})")
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if val_loss['total'] < best_val_loss:
+            best_val_loss = val_loss['total']
             best_params = copy.deepcopy(model.state_dict())
             patience_counter = 0
 
             if save:
                 Path("parameters").mkdir(parents=True, exist_ok=True)
-                print(f"New best loss {best_val_loss:.4f}, parameters saved!")
+                print(f"New best loss {best_val_loss:.4f} (parameters saved)")
                 torch.save(model.state_dict(), "parameters/model.pt")
         else:
             patience_counter += 1
@@ -236,12 +244,14 @@ if __name__ == "__main__":
     hidden_dim = 32
     model = Model(algos, 1, hidden_dim, 1).to(device) # train on GPU if available
     model = torch.compile(model) # compile to train faster
+
     train_size = 100 # number of graph from each category (7 category in total)
     val_size = 20
     num_nodes = 20
     epochs = 400
     min_epochs = 100
     patience = 50
+
     train(model,
           train_size=train_size,
           val_size=val_size,

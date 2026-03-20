@@ -46,9 +46,9 @@ def simulate_bf(graph: Graph, state:list, predcessor:list) -> tuple:
 
 def compute_bf_states(graph: Graph, source:int) -> tuple:
 
-    inf = graph.get_longest_path() + 1
+    max_dist = graph.get_longest_path() + 1
 
-    state = [inf] * graph.num_nodes
+    state = [max_dist] * graph.num_nodes
     predecessor = [-1] * graph.num_nodes
     termination = []
 
@@ -58,37 +58,36 @@ def compute_bf_states(graph: Graph, source:int) -> tuple:
     predecessors = [predecessor.copy()]
 
     for _ in range(graph.num_nodes):
-        next_state, next_parent = simulate_bf(graph, state, predecessor)
+        next_state, next_predecessor = simulate_bf(graph, state, predecessor)
 
         if next_state == state:
             break
         state = next_state
-        predecessor = next_parent
+        predecessor = next_predecessor
 
         states.append(state.copy())
         predecessors.append(predecessor.copy())
 
-    return states, predecessors, inf
+    return states, predecessors, max_dist
 
 def compute_prim_states(graph: Graph, source: int) -> tuple:
 
     n = graph.num_nodes
 
     state = [0] * graph.num_nodes
-    parent = [source] * n
+    predecessor = [-1] * n
 
     state[source] = 1
-    parent[source] = source
 
     states = [state.copy()]
-    parents = [parent.copy()]
+    predecessors = [predecessor.copy()]
 
     for _ in range(n):
         next_state = state.copy()
-        next_parent = parent.copy()
+        next_predecessor = predecessor.copy()
 
         best_node = -1 # # undiscovered node with the smallest connecting edge
-        best_parent = 0
+        best_predecessor = 0
         best_weight = float('inf')
 
         for node in range(graph.num_nodes):
@@ -96,20 +95,20 @@ def compute_prim_states(graph: Graph, source: int) -> tuple:
                 if state[node] == 1 and state[neigh] == 0 and weight < best_weight:
                     best_weight = weight
                     best_node = neigh
-                    best_parent = node
+                    best_predecessor = node
 
         next_state[best_node] = 1
-        next_parent[best_node] = best_parent
+        next_predecessor[best_node] = best_predecessor
 
         if next_state == state or best_node == -1:
             break
         state = next_state
-        parent = next_parent
-        
-        states.append(state.copy())
-        parents.append(parent.copy())
+        predecessor = next_predecessor
 
-    return states, parents
+        states.append(state.copy())
+        predecessors.append(predecessor.copy())
+
+    return states, predecessors
 
 def compute_cc_states(graph: Graph) -> list:
     n = graph.num_nodes
@@ -139,16 +138,16 @@ def compute_states(algo: str, graph: Graph, source: int) -> tuple:
             termination[-1] = 1.0
             return states, None, None, termination
         case 'bf':
-            states, predecessors, inf = compute_bf_states(graph, source)
+            states, predecessors, max_dist = compute_bf_states(graph, source)
             termination = [0.0 for i in range(len(states))]
             termination[-1] = 1.0
-            return states, predecessors, inf, termination
+            return states, predecessors, max_dist, termination
         case 'prim':
             states, predecessors = compute_prim_states(graph, source)
             termination = [0.0 for i in range(len(states))]
             termination[-1] = 1.0
-            inf = 30
-            return states, predecessors, inf, termination
+            max_dist = 30
+            return states, predecessors, max_dist, termination
         case 'cc':
             states = compute_cc_states(graph)
             termination = [0.0 for i in range(len(states))]
@@ -166,34 +165,33 @@ def generate_examples(states: list, predecessors: list | None = None, terminatio
     return data
 
 if __name__ == "__main__":
-    
-    adj = [
-        [(0, 1.0), (1, 1.0), (2, 1.0)],
-        [(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)],
-        [(0, 1.0), (1, 1.0), (2, 1.0), (4, 1.0)],
-        [(3, 1.0), (1, 1.0)],
-        [(4, 1.0), (2, 1.0)]
-    ]
 
-    g = Graph(5, adj)
+    g = Graph(5)
+
+    g.add_edge(0, 1, 1.0)
+    g.add_edge(0, 2, 1.0)
+    g.add_edge(1, 2, 1.0)
+    g.add_edge(1, 3, 1.0)
+    g.add_edge(2, 4, 1.0)
+
     print(g)
 
     ## BFS
-    print("\n-- Breadth First Search --")
+    print("\nBreadth First Search algorithm:")
     states = compute_bfs_states(g, 0)
     for ite, state in enumerate(states):
-        print(f"{ite} - {state}")
+        print(f"Step {ite}: {state}")
 
     print()
 
     ## Bellman-Ford
-    print("\n-- Bellman-Ford --")
-    states, parents, inf = compute_bf_states(g, 0)
+    print("\nBellman-Ford algorithm:")
+    states, predecessors, max_dist = compute_bf_states(g, 0)
     for ite, state in enumerate(states):
-        print(f"{ite} - {state}")
+        print(f"Step {ite}: {state}")
 
     # Prim
-    print("\n-- Prim --")
-    states, parents = compute_prim_states(g, 0)
+    print("\nPrim algorithm:")
+    states, predecessors = compute_prim_states(g, 0)
     for ite, state in enumerate(states):
-        print(f"{ite} - {state}")
+        print(f"Step {ite}: {state}")

@@ -1,9 +1,7 @@
 import torch
 
 class Graph:
-    """
-    Graph is represented as an adjacency list [neighbour, weight]
-    """
+    """Graph is represented as an adjacency list [neighbour, weight]"""
     def __init__(self, num_nodes: int, adjacency_list: list | None = None) -> None:
         self.num_nodes = num_nodes
         if adjacency_list is None:
@@ -30,7 +28,7 @@ class Graph:
             self.adj[v] = [(n, w) for n, w in self.adj[v] if n != u]
 
     def __repr__(self) -> str:
-        res = f"Graph with {self.num_nodes} nodes and adjacency list:\n"
+        res = res = f"Graph {self.num_nodes} nodes\n"
         for node in range(self.num_nodes):
             edges = [(v, round(w, 3)) for v, w in self.adj[node]]
             res += f"  Node {node}: {edges}\n"
