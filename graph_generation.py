@@ -147,7 +147,7 @@ def random_graph(
 
     return graph
 
-def barabisi_albert_graph(
+def barabasi_albert_graph(
         num_nodes: int, 
         seed: int | None = None, 
         weighted: bool = False,
@@ -158,6 +158,9 @@ def barabisi_albert_graph(
     """
     Graph with either 4 or 5 edges to every incoming node
     """
+
+    if seed is not None:
+        random.seed(seed)
 
     graph = Graph(num_nodes)
 
@@ -196,7 +199,7 @@ def community_graph(
     """
     Generates 4-Community graphs
     "first generating four disjoint Erdos-Rényi graphs with edge probability 0.7,
-    followed by interconnecting their nodes with edge probability 0.01"
+    followed by interconnecting their nodes with edge probability 0.05"
     """
 
     if seed is not None:
@@ -281,8 +284,8 @@ def generate_training_graphs(
     by_category: int = 1,
     num_nodes: int = 20,
     weighted: bool = False,
-    weight_mn: float = 0,
-    weight_mx: float = 1,
+    weight_mn: float = 0.0,
+    weight_mx: float = 1.0,
 ) -> list:
     graphs = []
     p = min(0.5, math.log2(num_nodes) / num_nodes)
@@ -292,7 +295,7 @@ def generate_training_graphs(
             grid_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             random_tree(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             random_graph(num_nodes=num_nodes, p=p, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
-            barabisi_albert_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
+            barabasi_albert_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             community_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
             caveman_graph(num_nodes=num_nodes, weighted=weighted, weight_mn=weight_mn, weight_mx=weight_mx, self_loop=True),
         ])
@@ -314,5 +317,5 @@ if __name__ == "__main__":
     tree = random_tree(num_nodes)
     print(tree)
 
-    barabis_albert = barabisi_albert_graph(7)
+    barabis_albert = barabasi_albert_graph(7)
     print(barabis_albert)

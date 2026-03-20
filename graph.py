@@ -11,8 +11,9 @@ class Graph:
         else:
             self.adj = adjacency_list
 
+        # cache attributes
         self.longest_path = None
-        self.edges_tensor = None # used for the neural network input
+        self.edge_tensors_dict = dict() # edge_tensors by devices and dtype
 
     def add_edge(self, u: int, v: int, w: float = 1.0) -> None:
         self.adj[u].append((v, w))
@@ -66,31 +67,38 @@ class Graph:
 
         self.longest_path = max(dist[u][v] for u in range(n) for v in range(n) if dist[u][v] < float('inf'))
 
-    def get_longest_path(self) -> float:
+    def get_longest_path(self) -> None:
         if self.longest_path is None:
             self.compute_longest_path()
         return self.longest_path
     
-    def edges_to_tensor(self, device: torch.device = None, dtype: torch.dtype = None) -> None:
-        """
-        Convert edges to tensors and cache them to speed up neural network computation
-        """
-        sources, dists, weights = [], [], []
-        for node in range(self.num_nodes):
-            for neigh, weight in self.adj[node]:
-                sources.append(node)
-                dists.append(neigh)
-                weights.append(weight)
-        self.edges_tensor = (
-            torch.tensor(sources, device=device),
-            torch.tensor(dists, device=device),
-            torch.tensor(weights, device=device, dtype=dtype).unsqueeze(1),
-        )
+    def build_edge_tensors(self, key: str, device: torch.device) -> None:
+        sources = []
+        dests = []
+        weights = []
 
-    def get_edges_tensor(self, device, dtype) -> tuple:
-        if self.edges_tensor is None:
-            self.edges_to_tensor(device, dtype)
-        return self.edges_tensor
+        for j in range(self.num_nodes):
+            for i, w in self.adj[j]:
+                sources.append(j)
+                dests.append(i)
+                weights.append(w)
+
+        if len(sources) == 0:
+            sources_t = torch.empty(0, dtype=torch.long, device=device)
+            dests_t = torch.empty(0, dtype=torch.long, device=device)
+            weights_t = torch.empty((0, 1), dtype=torch.float32, device=device)
+        else:
+            sources_t = torch.tensor(sources, dtype=torch.long, device=device)
+            dests_t = torch.tensor(dests, dtype=torch.long, device=device)
+            weights_t = torch.tensor(weights, dtype=torch.float32, device=device).unsqueeze(1)
+
+        self.edge_tensors_dict[key] = (sources_t, dests_t, weights_t)
+
+    def get_edge_tensors(self, device: torch.device) -> tuple:
+        key = str(device)
+        if key not in self.edge_tensors_dict:
+            self.build_edge_tensors(key, device)
+        return self.edge_tensors_dict[key]
         
 if __name__ == "__main__":
     graph = Graph(3)

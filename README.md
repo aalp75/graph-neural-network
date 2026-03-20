@@ -33,7 +33,7 @@ Epoch 1 | train loss = 0.0667 (state=0.0016, parent=0.0462, term=0.3772) | val l
 | Model MPNN-max | 20 nodes | 50 nodes | 100 nodes |
 |---|---|---|---|
 | Paper | 0.005 / 98.89% | 0.013 / 98.58% | 0.238 / 97.82% |
-| Repository | 0.009 / 93.33% | 0.018 / 89.99% | 0.031 / 86.57% |
+| Repository | 0.013 / 93.33% | 0.034 / 89.99% | 0.670 / 86.57% |
 
 More details on the implementation and results can be found in this [report](https://github.com/aalp75/graph-neural-network/report/report.pdf).
 

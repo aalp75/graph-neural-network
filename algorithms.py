@@ -33,42 +33,42 @@ def compute_bfs_states(graph: Graph, source: int) -> list:
 
     return states
 
-def simulate_bf(graph: Graph, state:list, parent:list) -> tuple:
+def simulate_bf(graph: Graph, state:list, predcessor:list) -> tuple:
     next_state = state.copy()
-    next_parent = parent.copy()
+    next_predecessor = predcessor.copy()
     for node in range(graph.num_nodes):
         for neigh, weight in graph.adj[node]:
             if state[node] + weight < next_state[neigh]:
                 next_state[neigh] = state[node] + weight
-                next_parent[neigh] = node
+                next_predecessor[neigh] = node
 
-    return next_state, next_parent
+    return next_state, next_predecessor
 
 def compute_bf_states(graph: Graph, source:int) -> tuple:
 
     inf = graph.get_longest_path() + 1
 
     state = [inf] * graph.num_nodes
-    parent = [source] * graph.num_nodes
+    predecessor = [-1] * graph.num_nodes
+    termination = []
 
     state[source] = 0.0
-    parent[source] = source
 
     states = [state.copy()]
-    parents = [parent.copy()]
+    predecessors = [predecessor.copy()]
 
     for _ in range(graph.num_nodes):
-        next_state, next_parent = simulate_bf(graph, state, parent)
+        next_state, next_parent = simulate_bf(graph, state, predecessor)
 
         if next_state == state:
             break
         state = next_state
-        parent = next_parent
+        predecessor = next_parent
 
         states.append(state.copy())
-        parents.append(parent.copy())
+        predecessors.append(predecessor.copy())
 
-    return states, parents, inf
+    return states, predecessors, inf
 
 def compute_prim_states(graph: Graph, source: int) -> tuple:
 
@@ -129,25 +129,40 @@ def compute_cc_states(graph: Graph) -> list:
     return states
 
 def compute_states(algo: str, graph: Graph, source: int) -> tuple:
+    """
+    Returns states, predecessors, longest path and termination
+    """
     match algo:
-        case 'BFS':
-            return compute_bfs_states(graph, source), None, None, None
-        case 'BF':
-            states, parents, inf = compute_bf_states(graph, source)
-            return states, parents, inf, None
-        case 'PRIM':
-            states, parents = compute_prim_states(graph, source)
-            return states, parents, None, None
-        case 'CC':
-            return compute_cc_states(graph), None, None, None
+        case 'bfs':
+            states = compute_bfs_states(graph, source)
+            termination = [0.0 for i in range(len(states))]
+            termination[-1] = 1.0
+            return states, None, None, termination
+        case 'bf':
+            states, predecessors, inf = compute_bf_states(graph, source)
+            termination = [0.0 for i in range(len(states))]
+            termination[-1] = 1.0
+            return states, predecessors, inf, termination
+        case 'prim':
+            states, predecessors = compute_prim_states(graph, source)
+            termination = [0.0 for i in range(len(states))]
+            termination[-1] = 1.0
+            inf = 30
+            return states, predecessors, inf, termination
+        case 'cc':
+            states = compute_cc_states(graph)
+            termination = [0.0 for i in range(len(states))]
+            termination[-1] = 1.0
+            return states, None, None, termination
         case _:
             raise ValueError(f"Unknown algorithm: {algo}")
 
-def generate_examples(states: list, parents: list | None = None) -> list:
+def generate_examples(states: list, predecessors: list | None = None, terminations: list | None = None) -> list:
     data = []
     for i in range(len(states) - 1):
-        parent = None if parents is None else parents[i + 1]
-        data.append((states[i], states[i + 1], parent))
+        predecessor = None if predecessors is None else predecessors[i + 1]
+        termination = None if terminations is None else terminations[i + 1]
+        data.append((states[i], states[i + 1], predecessor, termination))
     return data
 
 if __name__ == "__main__":

@@ -28,16 +28,17 @@
 \usetikzlibrary{arrows.meta, positioning}
 
 \title{\textbf{\textcolor{accent}{Implementation Report}}}
+\author{}
 \date{}
 
 \begin{document}
 
 \maketitle
-\vspace{-5em}
+\vspace{-7em}
 
 \section{Introduction}
 
-This repository aims to implement the paper \textit{Neural Execution of Graph Algorithms}~\cite{velickovic2019neural} and to reproduce the results. In addition to the original tasks, it includes an extension to the connected components algorithm.
+This repository aims to implement the paper \textit{Neural Execution of Graph Algorithms}~\cite{velickovic2019neural} and to reproduce the results. The model is focus to predict to next state in the graph algorithm iteration. In addition to the original tasks, it includes an extension to the connected components algorithm.
 
 This report provides a concise overview of the implementation, experimental setup, and results, and serves as supporting notes to better understand both the repository and the model.
 
@@ -45,7 +46,7 @@ This report provides a concise overview of the implementation, experimental setu
 
 \subsection{Graph Generation}
 
-Following the original paper, the training data is generated using seven types of random graphs:
+Following the original paper, the training data is generated using seven types of undirected random graphs:
 \begin{itemize}
 \item Ladder graphs
 \item 2D grid graphs
@@ -68,7 +69,7 @@ The architecture consists of:
 \item a \textbf{termination network} $T_A$ predicting when the algorithm should stop.
 \end{itemize}
 
-Compare to the original paper the termination newtowkr has been slighly modified. Additional details can be found in~\cite{velickovic2022clrs} and the computation pipeline can be described as follows:
+Compare to the original paper the termination network has been slighly modified. Additional details can be found in~\cite{velickovic2022clrs} and the computation pipeline can be described as follows:
 
 \[
 \begin{aligned}
@@ -167,7 +168,7 @@ Paper
 Repository
 & 0.013 / 93.33\%
 & 0.034 / 89.99\%
-& 0.670 / 86.57\% \\
+& 0.317 / 86.57\% \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -220,7 +221,7 @@ Repository
 
 \subsection{Details}
 
-The framework requires algorithms to be Markovian processes, i.e., the next state depends only on the current state. Algorithms such as DFS are non-Markovian and cannot be trained in this framework. Dijkstra's algorithm can be reformulated in a Markovian way by augmenting the node features with a visited state, but this would significantly increase the complexity of the code.
+The framework requires algorithms to be Markovian processes, i.e., the next state depends only on the current state. Algorithms such as DFS are non-Markovian and cannot be trained in this framework. Dijkstra's algorithm can be reformulated in a Markovian way by augmenting the node features with a visited state, but this would significantly increase the complexity of the code (It is actually also the case for DFS algorithm)
 
 A natural extension of the framework is connected components (CC), which can be formulated as a Markovian process as follows:
 
@@ -247,6 +248,10 @@ Repository
 \bottomrule
 \end{tabular}
 \end{table}
+
+\section{Comments}
+
+The termination prediction has been very hard to train and to predict and is the part giving the less satisfying results (Note that it has been dropped in the 2022 paper~\cite{velickovic2022clrs})
 
 \bibliographystyle{unsrt}
 \bibliography{references}
