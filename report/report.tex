@@ -38,7 +38,7 @@
 
 \section{Introduction}
 
-This repository aims to implement the paper \textit{Neural Execution of Graph Algorithms}~\cite{velickovic2019neural} and to reproduce the results. The model is focus to predict to next state in the graph algorithm iteration. In addition to the original tasks, it includes an extension to the connected components algorithm.
+This repository implements the paper \textit{Neural Execution of Graph Algorithms}~\cite{velickovic2019neural} (ICLR 2020) and aims to reproduce its main results. The model is trained to predict the next state of a graph algorithm at each iteration. In addition to the original tasks, we extend the framework to the connected components algorithm.
 
 This report provides a concise overview of the implementation, experimental setup, and results, and serves as supporting notes to better understand both the repository and the model.
 
@@ -46,7 +46,7 @@ This report provides a concise overview of the implementation, experimental setu
 
 \subsection{Graph Generation}
 
-Following the original paper, the training data is generated using seven types of undirected random graphs:
+Following the original paper, training data is generated using seven types of undirected random graphs:
 \begin{itemize}
 \item Ladder graphs
 \item 2D grid graphs
@@ -59,17 +59,17 @@ Following the original paper, the training data is generated using seven types o
 
 \subsection{Model Architecture}
 
-The repository implements the maximisation-based Message Passing Neural Network (MPNN)~\cite{gilmer2017neural}, which is the best-performing model reported in the original paper.
+The repository implements the maximisation\-based Message Passing Neural Network (MPNN)~\cite{gilmer2017neural}, which was reported as the best-performing model in the original paper.
 
 The architecture consists of:
 \begin{itemize}
-\item an \textbf{encoder} $f_A$ and a \textbf{decoder} $g_A$, both defined per algorithm,
+\item an \textbf{encoder} $f_A$ and a \textbf{decoder} $g_A$, both defined for each algorithm,
 \item a shared \textbf{processor} $P$,
 \item a \textbf{predecessor network} $R$ for tasks such as Bellman-Ford and Prim,
 \item a \textbf{termination network} $T_A$ predicting when the algorithm should stop.
 \end{itemize}
 
-Compare to the original paper the termination network has been slighly modified. Additional details can be found in~\cite{velickovic2022clrs} and the computation pipeline can be described as follows:
+Additional details can be found in~\cite{velickovic2022clrs} and the computation pipeline can be summarised as:
 
 \[
 \begin{aligned}
@@ -85,7 +85,7 @@ h^{(t+1)} = P(z^t, G)
 \;\xrightarrow{\makebox[1.5cm]{\text{Predecessor}}}\; \pi^t=R(h^t, G)
 \\[8pt]
 &&&
-\;\xrightarrow{\makebox[1.5cm]{\text{Termination}}}\; \tau^{(t)} = T_A(h^t, \bar{h}^t, y^t)
+\;\xrightarrow{\makebox[1.5cm]{\text{Termination}}}\; \tau^{(t)} = T_A(\bar{h}^t)
 \end{aligned}
 \]
 
@@ -113,15 +113,15 @@ Experimental setup:
     \item Learning rate $5 \times 10^{-4}$
 \end{itemize}
 
-The implementation is done using PyTorch (2.10.0)
+The implementation is done using PyTorch (2.10)
 
-\subsection{Train}
+\subsection{Training}
 
-The model is trained on a dataset composed of 100 graphs per category (700 in total). Early stopping is applied based on a validation set (20 graphs per category, 140 in total) with a patience of 10 epochs. We add a minimum number of epochs because he training phase is very unstable at start due to the termination process which seems slow to learn. Training takes approximately one hour on a CPU/GPU setup (Intel Core i7-12700K/RTX 4060 Ti)
+The model is trained on a dataset composed of 100 graphs per category (700 in total). Early stopping is applied based on a validation set (20 graphs per category, 140 in total) with a patience of 50 epochs. We enforce a minimum number of epochs, as the training phase is initially unstable due to the termination network, which is slower to converge. Training takes a couple of hours on a CPU/GPU setup (Intel Core i7-12700K / RTX 4060 Ti)
 
-\subsection{Test}
+\subsection{Evaluation}
 
-The model is tested on a set of 20 random graphs of varying numbers of nodes. Increasing the number of nodes allows us to assess how well the model has learned the algorithms, i.e., whether it is able to generalise the algorithmic reasoning.
+The model is evaluated on 20 unseen random graphs with varying numbers of nodes. Increasing the number of nodes allows us to assess how well the model has learned the algorithms, i.e., whether it is able to generalise the algorithmic reasoning.
 
 \section{Results}
 
@@ -184,11 +184,11 @@ Repository
 Paper
 & 97.13\% / 96.84\%
 & 94.71\% / 93.88\%
-& 90/91\% / 88.79\% \\
+& 90.91\% / 88.79\% \\
 \midrule
 Repository
 & 92.59\% / 91.58\%
-& \% / 81.22\%
+& 88.48\% / 81.22\%
 & 85.52\% / 80.18\% \\
 \bottomrule
 \end{tabular}
@@ -221,12 +221,14 @@ Repository
 
 \subsection{Details}
 
-The framework requires algorithms to be Markovian processes, i.e., the next state depends only on the current state. Algorithms such as DFS are non-Markovian and cannot be trained in this framework. Dijkstra's algorithm can be reformulated in a Markovian way by augmenting the node features with a visited state, but this would significantly increase the complexity of the code (It is actually also the case for DFS algorithm)
+The framework requires algorithms to be Markovian processes, i.e., the next state depends only on the current state. Algorithms such as DFS are non-Markovian and cannot be trained in this framework. Dijkstra's algorithm can be reformulated in a Markovian way by augmenting the node features with a visited state, but this would significantly increase the complexity of the code (the same limitation applies to DFS algorithm)
 
-A natural extension of the framework is connected components (CC), which can be formulated as a Markovian process as follows:
+A natural extension of the framework is the connected components algorithm (CC), which can be formulated as a Markovian process as follows:
 
 \[
-\text{CC : }x_i^{(1)} = i \hspace{3cm} \text{CC : }x_i^{(t+1)} = \min_{j \in \mathcal{N}_i} (x_i^{(t)}, x_j^{(t)})
+\text{CC:} \quad x_i^{(1)} = i 
+\qquad
+x_i^{(t+1)} = \min \left( x_i^{(t)}, \min_{j \in \mathcal{N}_i} x_j^{(t)} \right)
 \]
 
 \subsection{Results}
@@ -251,7 +253,9 @@ Repository
 
 \section{Comments}
 
-The termination prediction has been very hard to train and to predict and is the part giving the less satisfying results (Note that it has been dropped in the 2022 paper~\cite{velickovic2022clrs})
+The termination prediction is the most challenging component of the model and yields the least satisfactory results (it has been dropped in the follow-up work~\cite{velickovic2022clrs}).
+
+Overall, the model successfully captures simple algorithmic patterns (e.g. BFS), but performance degrades on more complex tasks (e.g. Bellman-Ford, Prim), especially as graph size increases. In particular, there is a lack of precision in the predicted distances, which is partially masked by the use of an MSE loss that does not penalise small but structurally incorrect deviations.
 
 \bibliographystyle{unsrt}
 \bibliography{references}

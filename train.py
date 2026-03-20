@@ -3,14 +3,14 @@ import copy
 import time
 from pathlib import Path
 
+import torch
+import torch.optim as optim
+import torch.nn as nn
+
 from graph import Graph
 from model import Model
 from graph_generation import generate_training_graphs
-import algorithms as algorithms
-
-import torch
-import torch.nn as nn
-import torch.optim as optim
+import algorithms
 
 torch.set_float32_matmul_precision('high')
 
@@ -30,7 +30,7 @@ def compute_state_loss(algo: str, start: torch.tensor, pred: torch.tensor, expec
         state_loss = MSE(pred, expected)
     elif algo == 'prim':
         # predict next node
-        next_node = next(j for j in range(num_nodes) if start[j] == 0 and expected[j] == 1)
+        next_node = next(j for j in range(start.shape[0]) if start[j] == 0 and expected[j] == 1)
         next_node_t = torch.tensor([next_node], dtype=torch.long, device=expected.device)
 
         state_loss = CE((pred.squeeze(1)).unsqueeze(0), next_node_t)
@@ -48,25 +48,27 @@ def compute_reachable(algo: str, source: int, state: torch.tensor, max_dist: flo
         reachable = [False] * n
     return torch.tensor(reachable, device=state.device, dtype=torch.bool)
 
-def evaluate_algo(algo: str,
+def run_algo(algo: str,
                   model: Model,
                   graph: Graph,
                   source: int,
                   samples: list,
                   max_dist: int,
                   device: torch.device,
-                  optimizer: optim.Optimizer | None = None, 
+                  optimizer: torch.optim.Optimizer | None = None, 
                   train: bool = True
 ) -> tuple:
     
-    acc_state_loss = None
-    acc_predec_loss = None
-    acc_term_loss = None
-    
+    acc_state_loss = torch.tensor(0.0, device=device)
+    acc_predec_loss = torch.tensor(0.0, device=device)
+    acc_term_loss = torch.tensor(0.0, device=device)
     num_steps = 0
 
     edges = graph.get_edge_tensors(device)
     h = torch.zeros(graph.num_nodes, model.hidden_dim, device=device)
+
+    if not samples:
+        return {'state': 0.0, 'predec': 0.0, 'term': 0.0, 'steps': 0}
 
     for state, next_state, predecessors, termination in samples:
 
@@ -80,15 +82,12 @@ def evaluate_algo(algo: str,
             predec_loss = CE(p_pred[reachable], predecessors[reachable])
         term_loss = BCE_TERM(term_pred, termination)
 
-        acc_state_loss = state_loss if acc_state_loss is None else acc_state_loss + state_loss
-        acc_predec_loss = predec_loss if acc_predec_loss is None else acc_predec_loss + predec_loss
-        acc_term_loss = term_loss if acc_term_loss is None else acc_term_loss + term_loss
-        
+        acc_state_loss += state_loss
+        acc_predec_loss += predec_loss
+        acc_term_loss += term_loss
+
         h = h.detach()
         num_steps += 1
-
-    if acc_state_loss is None:
-        return {'state': 0.0, 'predec': 0.0, 'term': 0.0, 'steps': 0}
 
     total_loss = acc_state_loss + PREDEC_LAMBDA * acc_predec_loss + TERM_LAMBDA * acc_term_loss
 
@@ -105,7 +104,7 @@ def evaluate_algo(algo: str,
         'steps': num_steps,
     }
 
-def evaluate(model: Model,
+def run_dataset(model: Model,
              data: list,
              device: torch.device,
              optimizer: optim.Optimizer | None = None,
@@ -127,7 +126,7 @@ def evaluate(model: Model,
 
     with torch.set_grad_enabled(train):
         for algo, graph, source, sample, max_dist in data:
-            result = evaluate_algo(algo, 
+            result = run_algo(algo, 
                                    model, 
                                    graph, 
                                    source, 
@@ -158,19 +157,19 @@ def generate_data(size: int, num_nodes: int, algos: list, device: torch.device):
         graph.get_edge_tensors(device)
         for algo in algos:
             states, predecessors, inf, terminations = algorithms.compute_states(algo, graph, source)
-            examples = algorithms.generate_examples(states, predecessors, terminations)
+            steps = algorithms.generate_steps(states, predecessors, terminations)
 
-            examples_t = [
+            steps = [
                 (
                     torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(1),
                     torch.tensor(next_state, dtype=torch.float32, device=device).unsqueeze(1),
                     torch.tensor(predecessor, dtype=torch.long, device=device) if predecessor is not None else None,
                     torch.tensor(termination, dtype=torch.float32, device=device),
                 )
-                for state, next_state, predecessor, termination in examples
+                for state, next_state, predecessor, termination in steps
             ]
 
-            data.append((algo, graph, source, examples_t, inf))
+            data.append((algo, graph, source, steps, inf))
     return data
 
 def train(model: Model,
@@ -179,9 +178,9 @@ def train(model: Model,
           num_nodes: int = 20,
           epochs: int = 5,
           min_epochs: int = 5,
-          lr:float = 0.0005,
-          patience:int = 10,
-          verbose:bool = True,
+          lr: float = 0.0005,
+          patience: int = 10,
+          verbose: bool = True,
           save: bool = False,
 ) -> None:
     """Train the model with early stopping on validation loss"""
@@ -190,10 +189,10 @@ def train(model: Model,
     device = next(model.parameters()).device
     BCE_TERM.pos_weight = BCE_TERM.pos_weight.to(device)
     train_data = generate_data(train_size, num_nodes, model.algos, device)
-    val_data =  generate_data(val_size, num_nodes, model.algos, device)    
+    val_data = generate_data(val_size, num_nodes, model.algos, device)
     print("Generated!")
 
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     
     best_val_loss = float('inf')
     patience_counter = 0
@@ -205,8 +204,8 @@ def train(model: Model,
     start_time = time.time()
     for epoch in range(epochs): 
 
-        train_loss = evaluate(model, train_data, device, optimizer, train=True)
-        val_loss = evaluate(model, val_data, device, None, train=False)
+        train_loss = run_dataset(model, train_data, device, optimizer, train=True)
+        val_loss = run_dataset(model, val_data, device, None, train=False)
 
         if verbose:
             print(f"Epoch {epoch + 1} | "
@@ -219,8 +218,9 @@ def train(model: Model,
             patience_counter = 0
 
             if save:
+                if verbose:
+                    print(f"New best loss {best_val_loss:.4f} (parameters saved)")
                 Path("parameters").mkdir(parents=True, exist_ok=True)
-                print(f"New best loss {best_val_loss:.4f} (parameters saved)")
                 torch.save(model.state_dict(), "parameters/model.pt")
         else:
             patience_counter += 1
@@ -231,9 +231,6 @@ def train(model: Model,
     if best_params is not None:
         print(f"best val loss = {best_val_loss:.4f}")
         model.load_state_dict(best_params)
-    if save:
-        Path("parameters").mkdir(predecs=True, exist_ok=True)
-        torch.save(model.state_dict(), "parameters/model.pt")
 
     print(f"Trained in {time.time() - start_time:.2f} seconds")
 
@@ -243,13 +240,13 @@ if __name__ == "__main__":
     algos = ['bfs', 'bf', 'prim', 'cc']
     hidden_dim = 32
     model = Model(algos, 1, hidden_dim, 1).to(device) # train on GPU if available
-    model = torch.compile(model) # compile to train faster
+    #model = torch.compile(model) # compile to train faster
 
-    train_size = 100 # number of graph from each category (7 category in total)
-    val_size = 20
+    train_size = 20 # number of graph from each category (7 category in total)
+    val_size = 5
     num_nodes = 20
-    epochs = 400
-    min_epochs = 100
+    epochs = 100
+    min_epochs = 400
     patience = 50
 
     train(model,

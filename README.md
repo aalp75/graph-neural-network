@@ -3,8 +3,8 @@ PyTorch implementation of the paper **Neural Execution of Graph Algorithms** ,Pe
 ## Installation
 
 ```bash
-git clone https://github.com/aalp75/graph-neural-network.git
-cd graph-neural-network
+git clone https://github.com/aalp75/neural-execution-graph-algorithms.git
+cd neural-execution-graph-algorithms
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -16,15 +16,17 @@ pip install -r requirements.txt
 >>> from model import Model
 >>> from train import train
 
->>> model = Model(['BFS', 'BF', 'PRIM', 'CC'], 1, 32, 1)
->>> train(model, train_size=40, val_size=10, num_nodes=10, num_epochs=50, save=True)
+>>> model = Model(['bfs', 'bf', 'prim', 'cc'], in_dim=1, hidden_dim=32, out_dim=1)
+>>> train(model, train_size=40, val_size=10, num_nodes=10, num_epochs=50, patience=10)
 
-Epoch 0 | train loss = 0.1157 (state=0.0137, parent=0.0671, term=0.6977) | val loss = 0.0808 (state=0.0027, parent=0.0503, term=0.5571)
-Epoch 1 | train loss = 0.0667 (state=0.0016, parent=0.0462, term=0.3772) | val loss = 0.0586 (state=0.0007, parent=0.0431, term=0.2964)
+Epoch 1 | train loss = 0.1157 (state=0.0137, parent=0.0671, term=0.6977) | val loss = 0.0808 (state=0.0027, parent=0.0503, term=0.5571)
+Epoch 2 | train loss = 0.0667 (state=0.0016, predec=0.0462, term=0.3772) | val loss = 0.0586 (state=0.0007, predec=0.0431, term=0.2964)
 ...
 
->>> y_pred, _, _, term_pred = model('BFS', graph, x)
+>>> prediction = model('bfs', edges, x, h)
 ```
+
+More example are available in the notebook ```example.ipynb```
 
 ## Results
 
@@ -33,9 +35,9 @@ Epoch 1 | train loss = 0.0667 (state=0.0016, parent=0.0462, term=0.3772) | val l
 | Model MPNN-max | 20 nodes | 50 nodes | 100 nodes |
 |---|---|---|---|
 | Paper | 0.005 / 98.89% | 0.013 / 98.58% | 0.238 / 97.82% |
-| Repository | 0.013 / 93.33% | 0.034 / 89.99% | 0.670 / 86.57% |
+| Repository | 0.013 / 93.33% | 0.034 / 89.99% | 0.317 / 86.57% |
 
-More details on the implementation and results can be found in this [report](https://github.com/aalp75/graph-neural-network/report/report.pdf).
+More details on the implementation and results can be found in this [report](https://github.com/aalp75/neural-execution-graph-algorithms/report/report.pdf).
 
 ## References
 

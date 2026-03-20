@@ -1,13 +1,12 @@
 import math
 import random
 
-from model import Model
-from graph_generation import random_graph, generate_training_graphs
-
-import algorithms as algorithms
-
 import torch
 import torch.nn as nn
+
+from model import Model
+from graph_generation import random_graph, generate_training_graphs
+import algorithms
 
 def generate_test_data(test_size: int, num_nodes: int) -> tuple:
 
@@ -38,14 +37,14 @@ def test_bfs(model: Model, data: list, device: torch.device, details: bool = Fal
     for ite, (graph, source) in enumerate(data):
         if details: print(f"-- Iteration {ite} --")
         states, predecessors, _, termination = algorithms.compute_states('bfs', graph, source)
-        examples = algorithms.generate_examples(states, predecessors, termination)
+        steps = algorithms.generate_steps(states, predecessors, termination)
 
         x = torch.tensor(states[0], dtype=torch.float32).unsqueeze(1).to(device)
         h = torch.zeros(graph.num_nodes, model.hidden_dim, device=device)
 
         edges = graph.get_edge_tensors(device)
 
-        for step, (state, next_state, predecessors, termination) in enumerate(examples):
+        for step, (state, next_state, predecessors, termination) in enumerate(steps):
 
             if details:
                 print(f"Initial state: {states[0][0]}\n")    
@@ -98,12 +97,12 @@ def test_bf(model: Model, data: list, device: torch.device, details: bool = Fals
     for graph, source in data:
         edges = graph.get_edge_tensors(device)
         states, predecessors, inf, terminations = algorithms.compute_states('bf', graph, source)
-        examples = algorithms.generate_examples(states, predecessors, terminations)
+        steps = algorithms.generate_steps(states, predecessors, terminations)
 
         h = torch.zeros(graph.num_nodes, model.hidden_dim)
         x = torch.tensor(states[0], dtype=torch.float32).unsqueeze(1).to(device)
 
-        for step, (state, next_state, predecessors, termination) in enumerate(examples):
+        for step, (state, next_state, predecessors, termination) in enumerate(steps):
             y_true = torch.tensor(next_state, dtype=torch.float32).unsqueeze(1)
             y_predict, p_predict, h, term_predict = model('bf', edges, x, h)
 
@@ -137,8 +136,8 @@ def test_bf(model: Model, data: list, device: torch.device, details: bool = Fals
                 print(f"Termination probability = {term_proba:.2f} ({term_predict_str}) exepected: {term_str}")
                 print()
 
-            x = torch.tensor(next_state).unsqueeze(1)
-            #x = y_predict.detach()
+            #x = torch.tensor(next_state).unsqueeze(1)
+            x = y_predict.detach()
             h = h.detach()
 
     print(f"Score = {total_score / total_steps:.4f} (MSE)")
@@ -147,6 +146,8 @@ def test_bf(model: Model, data: list, device: torch.device, details: bool = Fals
 
 
 def test_prim(model: Model, data: list, device: torch.device, details: bool = False) -> None:
+
+    score = 0.0 # next node prediction
 
     total_ce = 0.0
     total_next_node_acc = 0.0
@@ -168,7 +169,7 @@ def test_prim(model: Model, data: list, device: torch.device, details: bool = Fa
         with torch.no_grad():
             for step in range(len(states) - 1):
                 state = states[step]
-                x = torch.tensor(state, dtype=torch.float32).unsqueeze(1).to(device)
+                #x = torch.tensor(state, dtype=torch.float32).unsqueeze(1).to(device)
                 target = states[step + 1]
                 parent = parents[step + 1]
                 next_node = next(i for i in range(graph.num_nodes) if state[i] == 0 and target[i] == 1)
@@ -206,7 +207,7 @@ def test_prim(model: Model, data: list, device: torch.device, details: bool = Fa
                     print()
 
                 total_ce += ce
-                total_next_node_acc += (next_node_pred == next_node)
+                score += (next_node_pred == next_node)
                 total_p_acc += p_acc
                 total_steps += 1
                 term_score += (term_true == (term_prob > 0.5))
@@ -222,8 +223,7 @@ def test_prim(model: Model, data: list, device: torch.device, details: bool = Fa
             final_p_pred = p_pred.argmax(dim=1).tolist()
             total_last_step_p_acc += sum(final_p_pred[i] == final_parent[i] for i in final_reachable) / len(final_reachable) if final_reachable else 1.0
 
-    print(f"Total mean next node CE: {total_ce / total_steps:.4f}")
-    print(f"Total mean next node acc: {total_next_node_acc / total_steps * 100:.2f}%")
+    print(f"Score: {score / total_steps * 100:.2f}% (Next node prediction accucary)")
     print(f"Total mean predecessor acc: {total_p_acc / total_steps * 100:.2f}%")
     print(f"Last step predecessor acc: {total_last_step_p_acc / len(data) * 100:.2f}%")
     print(f"Termination score: {term_score.item() / total_steps * 100:.2f}%")
@@ -285,9 +285,9 @@ def test_cc(model: Model, data: list, device: torch.device, details: bool = Fals
             final_comp_true = [round(v) for v in states[-1]]
             total_last_step_acc += sum(p == t for p, t in zip(final_comp_pred, final_comp_true)) / len(final_comp_true)
 
-    print(f"Total mean accuracy: {total_acc / total_steps * 100:.2f}%")
+    print(f"Score: {total_acc / total_steps * 100:.2f}% (Accuracy)")
     print(f"Last step accuracy: {total_last_step_acc / len(data) * 100:.2f}%")
-    print(f"Termination score: {term_score.item() / total_steps * 100:.2f}%")
+    print(f"Termination score: {term_score.item() / total_steps * 100:.2f}% (Accuracy)")
 
 if __name__ == "__main__":
     algos = ['bfs', 'bf', 'prim', 'cc']
@@ -295,18 +295,18 @@ if __name__ == "__main__":
     model = Model(algos, 1, 32, 1)
     #model = torch.compile(model)
     #model.load_state_dict(torch.load("parameters/model.pt", weights_only=True))
-    model.load_state_dict({k.replace("_orig_mod.", ""): v for k, v in torch.load("parameters/model.pt", weights_only=True).items()})
+    model.load_state_dict({k.replace("_orig_mod.", ""): v for k, v in torch.load("parameters/modelgood.pt", weights_only=True).items()})
     model.eval()
 
     test_size = 5
-    num_nodes = 20
-    details = True
+    num_nodes = 100
+    details = False
 
     test_data = generate_test_data(test_size, num_nodes)
 
     device = next(model.parameters()).device
 
-    test_bfs(model, test_data, device, details)
+    #test_bfs(model, test_data, device, details)
     #test_bf(model, test_data, device, details)
     #test_prim(model, test_data, device, details)
-    #test_cc(model, test_data, device, details)
+    test_cc(model, test_data, device, details)

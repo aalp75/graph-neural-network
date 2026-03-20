@@ -156,7 +156,7 @@ def compute_states(algo: str, graph: Graph, source: int) -> tuple:
         case _:
             raise ValueError(f"Unknown algorithm: {algo}")
 
-def generate_examples(states: list, predecessors: list | None = None, terminations: list | None = None) -> list:
+def generate_steps(states: list, predecessors: list | None = None, terminations: list | None = None) -> list:
     data = []
     for i in range(len(states) - 1):
         predecessor = None if predecessors is None else predecessors[i + 1]

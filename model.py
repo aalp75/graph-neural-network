@@ -10,6 +10,8 @@ class Encoder(nn.Module):
         self.proj = nn.Linear(in_dim + hidden_dim, hidden_dim)
 
     def forward(self, x: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        #if h is None:
+            #h = torch.zeros(x.size(0), self.hidden_dim, device=x.device, dtype=x.dtype)
         return self.proj(torch.cat([x, h], dim=1))
 
 class Decoder(nn.Module):
@@ -94,7 +96,7 @@ class Predecessor(nn.Module):
         return scores
 
 class Model(nn.Module):
-    def __init__(self, algos: list, in_dim: int, hidden_dim: int, out_dim: int) -> None:
+    def __init__(self, algos: list, in_dim: int = 1, hidden_dim: int = 32, out_dim: int = 1) -> None:
         super().__init__()
 
         self.algos = algos
