@@ -23,7 +23,7 @@ def ladder_graph(
     if seed is not None:
         random.seed(seed)
     
-    graph = Graph(num_nodes)
+    graph = Graph(num_nodes, type="ladder")
     for node in range(num_nodes):
         if node % 2 == 0:
             if node + 1 < num_nodes:
@@ -53,7 +53,7 @@ def grid_graph(
     if seed is not None:
         random.seed(seed)
         
-    graph = Graph(num_nodes)
+    graph = Graph(num_nodes, type="grid")
 
     c = int(math.sqrt(num_nodes))
 
@@ -85,7 +85,7 @@ def random_tree(
     if seed is not None:
         random.seed(seed)
 
-    graph = Graph(num_nodes)
+    graph = Graph(num_nodes, type="random tree")
 
     # generate prufer sequence of length num_nodes - 2
     prufer_seq = []
@@ -134,7 +134,7 @@ def random_graph(
     if seed is not None:
         random.seed(seed)
 
-    graph = Graph(num_nodes)
+    graph = Graph(num_nodes, type="erdos-renyi")
 
     for i in range(num_nodes):
         for j in range(i + 1, num_nodes):
@@ -162,7 +162,7 @@ def barabasi_albert_graph(
     if seed is not None:
         random.seed(seed)
 
-    graph = Graph(num_nodes)
+    graph = Graph(num_nodes, type="barabasi albert")
 
     processed = [] # keeps track of node already in the graph
 
@@ -208,7 +208,7 @@ def community_graph(
     q = num_nodes // 4
     sizes = [q, q, q, num_nodes - 3 * q]
 
-    graph = Graph(0)
+    graph = Graph(0, type="community")
     
     for i in range(4):
         new_graph = random_graph(num_nodes=sizes[i], p=0.7, weighted=weighted,
@@ -247,7 +247,7 @@ def caveman_graph(
     q = num_nodes // 4
     sizes = [q, q, q, num_nodes - 3 * q]
 
-    graph = Graph(0)
+    graph = Graph(0, type="caveman")
 
     for i in range(4): # p = 1 because it's fully connected graph (clique)
         new_graph = random_graph(num_nodes=sizes[i], p=1.0, weighted=weighted,

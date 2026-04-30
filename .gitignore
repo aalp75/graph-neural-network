@@ -5,6 +5,7 @@ data/
 references/
 # pre trained model
 parameters/
+TODO.md
 
 # LaTeX build files
 *.aux

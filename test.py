@@ -5,14 +5,29 @@ import torch
 import torch.nn as nn
 
 from model import Model
-from graph_generation import random_graph, generate_training_graphs
+import graph_generation
 import algorithms
 
 def generate_test_data(test_size: int, num_nodes: int) -> tuple:
 
+    
+    data = graph_generation.generate_training_graphs(by_category=test_size, 
+                                      num_nodes=num_nodes,
+                                      weighted=True,
+                                      weight_mn=0.2,
+                                      weight_mx=1.0
+    )
+
+    return data
+
+    graph = graph_generation.ladder_graph(num_nodes, weighted=True, weight_mn=0.2, weight_mx=2.0, self_loop=True)
+    return [(graph, 1)]
+    
     data = []
+
+    
     for _ in range(test_size):
-        graph = random_graph(
+        graph = graph_generation.random_graph(
             num_nodes=num_nodes,
             p=min(0.5, math.log2(num_nodes) / num_nodes),
             seed=None,
@@ -95,6 +110,8 @@ def test_bf(model: Model, data: list, device: torch.device, details: bool = Fals
     total_steps = 0
 
     for graph, source in data:
+
+        graph_score = 0.0
         edges = graph.get_edge_tensors(device)
         states, predecessors, inf, terminations = algorithms.compute_states('bf', graph, source)
         steps = algorithms.generate_steps(states, predecessors, terminations)
@@ -127,6 +144,8 @@ def test_bf(model: Model, data: list, device: torch.device, details: bool = Fals
 
             total_steps += 1
 
+            graph_score += score 
+            
             if details:
                 print(f"Step {step + 1}")
                 for node in range(graph.num_nodes):
@@ -136,10 +155,12 @@ def test_bf(model: Model, data: list, device: torch.device, details: bool = Fals
                 print(f"Termination probability = {term_proba:.2f} ({term_predict_str}) exepected: {term_str}")
                 print()
 
-            #x = torch.tensor(next_state).unsqueeze(1)
-            x = y_predict.detach()
-            h = h.detach()
+            x = torch.tensor(next_state).unsqueeze(1)
+            #x = y_predict.detach()
+            #h = h.detach()
+        #print(f"Graph type: {graph.type} MSE = {graph_score:.2f}")
 
+    print(f"Total steps: {total_steps}")
     print(f"Score = {total_score / total_steps:.4f} (MSE)")
     print(f"Termination score = {term_score / total_steps * 100:.2f} (Accuracy %)")
     print(f"Predecessor score = {predec_score / total_steps * 100:.2f} (Accuracy %)")
@@ -293,20 +314,21 @@ if __name__ == "__main__":
     algos = ['bfs', 'bf', 'prim', 'cc']
     #algos = ['bf']
     model = Model(algos, 1, 32, 1)
-    #model = torch.compile(model)
+    # uncompiled model
     #model.load_state_dict(torch.load("parameters/model.pt", weights_only=True))
-    model.load_state_dict({k.replace("_orig_mod.", ""): v for k, v in torch.load("parameters/modelgood.pt", weights_only=True).items()})
+    # compiled model
+    model.load_state_dict({k.replace("_orig_mod.", ""): v for k, v in torch.load("parameters/model.pt", weights_only=True).items()})
     model.eval()
 
     test_size = 5
-    num_nodes = 100
+    num_nodes = 20
     details = False
 
     test_data = generate_test_data(test_size, num_nodes)
 
     device = next(model.parameters()).device
 
-    #test_bfs(model, test_data, device, details)
-    #test_bf(model, test_data, device, details)
-    #test_prim(model, test_data, device, details)
+    test_bfs(model, test_data, device, details)
+    test_bf(model, test_data, device, details)
+    test_prim(model, test_data, device, details)
     test_cc(model, test_data, device, details)

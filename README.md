@@ -26,7 +26,7 @@ Epoch 2 | train loss = 0.0667 (state=0.0016, predec=0.0462, term=0.3772) | val l
 >>> prediction = model('bfs', edges, x, h)
 ```
 
-More example are available in the notebook ```example.ipynb```
+More examples are available in the notebook ```example.ipynb```
 
 ## Results
 
@@ -37,7 +37,7 @@ More example are available in the notebook ```example.ipynb```
 | Paper | 0.005 / 98.89% | 0.013 / 98.58% | 0.238 / 97.82% |
 | Repository | 0.013 / 93.33% | 0.034 / 89.99% | 0.317 / 86.57% |
 
-More details on the implementation and results can be found in this [report](https://github.com/aalp75/neural-execution-graph-algorithms/report/report.pdf).
+More details on the implementation and results can be found in this [report](https://github.com/aalp75/neural-execution-graph-algorithms/blob/main/report/report.pdf).
 
 ## References
 

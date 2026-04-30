@@ -2,12 +2,18 @@ import torch
 
 class Graph:
     """Graph is represented as an adjacency list [neighbour, weight]"""
-    def __init__(self, num_nodes: int, adjacency_list: list | None = None) -> None:
+    def __init__(self, 
+                 num_nodes: int, 
+                 adjacency_list: list | None = None, 
+                 type: str | None = None
+        ) -> None:
         self.num_nodes = num_nodes
         if adjacency_list is None:
             self.adj = [[] for _ in range(num_nodes)]
         else:
             self.adj = adjacency_list
+
+        self.type = type
 
         # cache attributes
         self.longest_path = None

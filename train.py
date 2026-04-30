@@ -86,7 +86,6 @@ def run_algo(algo: str,
         acc_predec_loss += predec_loss
         acc_term_loss += term_loss
 
-        h = h.detach()
         num_steps += 1
 
     total_loss = acc_state_loss + PREDEC_LAMBDA * acc_predec_loss + TERM_LAMBDA * acc_term_loss
@@ -112,8 +111,8 @@ def run_dataset(model: Model,
 ) -> dict:
     """
     Compute average loss on a dataset
-    inputs:
-        train: update the weights of the model
+    Args:
+        train (bool): update or not the weights of the model
     """
 
     loss = {'state': 0.0, 'predec': 0.0, 'term': 0.0, 'steps': 0}
@@ -151,7 +150,7 @@ def run_dataset(model: Model,
 def generate_data(size: int, num_nodes: int, algos: list, device: torch.device):
     data = []
     graphs = generate_training_graphs(by_category=size, num_nodes=num_nodes,
-                                      weighted=True, weight_mn=0.2, weight_mx=2.0)
+                                      weighted=True, weight_mn=0.2, weight_mx=1.0)
 
     for graph, source in graphs:
         graph.get_edge_tensors(device)
@@ -239,11 +238,11 @@ if __name__ == "__main__":
     print(f"Training on {device}")
     algos = ['bfs', 'bf', 'prim', 'cc']
     hidden_dim = 32
-    model = Model(algos, 1, hidden_dim, 1).to(device) # train on GPU if available
-    #model = torch.compile(model) # compile to train faster
+    model = Model(algos, in_dim=1, hidden_dim=hidden_dim, out_dim=1).to(device) # train on GPU if available
+    model = torch.compile(model) # compile to train faster
 
-    train_size = 20 # number of graph from each category (7 category in total)
-    val_size = 5
+    train_size = 100 # number of graph from each category (7 category in total)
+    val_size = 20
     num_nodes = 20
     epochs = 100
     min_epochs = 400

@@ -12,6 +12,7 @@
 \usepackage{xcolor}
 \usepackage{titlesec}
 \usepackage{titling}
+\usepackage{libertine}
 \setlength{\droptitle}{-4em}
 \usepackage[colorlinks=true, linkcolor=blue!60!black, citecolor=blue!60!black, urlcolor=blue!60!black]{hyperref}
 
@@ -19,6 +20,8 @@
 
 \titleformat{\section}{\large\bfseries\color{accent}}{}{0em}{}[\vspace{-4pt}\textcolor{accent}{\rule{\linewidth}{0.8pt}}]
 \titleformat{\subsection}{\normalsize\bfseries\color{accent!80!black}}{}{0em}{}
+\titlespacing*{\section}{0pt}{1.5ex plus .2ex}{0.8ex plus .1ex}
+\titlespacing*{\subsection}{0pt}{1ex plus .1ex}{0.4ex plus .1ex}
 
 \setlist[itemize]{label=\textcolor{accent}{--}, itemsep=0pt, topsep=0pt}
 \setlength{\parindent}{0pt}
@@ -38,15 +41,17 @@
 
 \section{Introduction}
 
-This repository implements the paper \textit{Neural Execution of Graph Algorithms}~\cite{velickovic2019neural} (ICLR 2020) and aims to reproduce its main results. The model is trained to predict the next state of a graph algorithm at each iteration. In addition to the original tasks, we extend the framework to the connected components algorithm.
+This repository implements the paper \textit{Neural Execution of Graph Algorithms}~\cite{velickovic2019neural} (ICLR 2020), with the objective of reproducing its main experimental results. The paper studies whether neural networks can learn to execute classical graph algorithms by predicting the next algorithmic state at each iteration.
 
-This report provides a concise overview of the implementation, experimental setup, and results, and serves as supporting notes to better understand both the repository and the model.
+The implemented model is trained to imitate the step-by-step execution of several graph algorithms, including BFS, Bellman-Ford, and Prim's algorithm. In addition to reproducing the original tasks, this work extends the framework to the Connected Components algorithm.
+
+This report provides a concise overview of the implementation, experimental setup, and results. It is intended to serve both as documentation for the repository and as supporting notes for understanding the model.
 
 \section{Method}
 
 \subsection{Graph Generation}
 
-Following the original paper, training data is generated using seven types of undirected random graphs:
+Following the experimental setup of the original paper, the training data is generated from seven families of undirected random graphs:
 \begin{itemize}
 \item Ladder graphs
 \item 2D grid graphs
@@ -63,9 +68,9 @@ The repository implements the maximisation\-based Message Passing Neural Network
 
 The architecture consists of:
 \begin{itemize}
-\item an \textbf{encoder} $f_A$ and a \textbf{decoder} $g_A$, both defined for each algorithm,
-\item a shared \textbf{processor} $P$,
-\item a \textbf{predecessor network} $R$ for tasks such as Bellman-Ford and Prim,
+\item an \textbf{encoder} $f_A$ and a \textbf{decoder} $g_A$, both specific to each algorithm;
+\item a shared \textbf{processor} $P$;
+\item a \textbf{predecessor network} $R$ for tasks that require predecessor prediction, such as Bellman-Ford and Prim;
 \item a \textbf{termination network} $T_A$ predicting when the algorithm should stop.
 \end{itemize}
 
@@ -99,7 +104,8 @@ y \in \mathbb{R}^{N}, \quad
 \tau \in \mathbb{R}.
 \]
 
-The loss function depends on the algorithm. Prim's algorithm is trained to predict the next node in the MST.
+The loss function depends on the type of prediction required by each algorithm. Prim's algorithm is trained to predict the next node in the minimum spanning tree (MST).
+
 \begin{itemize}
 \item Mean Squared Error (MSE): Bellman-Ford distances, Connected Components
 \item Binary Cross-Entropy (BCE): BFS reachability and termination prediction
@@ -113,19 +119,23 @@ Experimental setup:
     \item Learning rate $5 \times 10^{-4}$
 \end{itemize}
 
-The implementation is done using PyTorch (2.10)
+The implementation is written in PyTorch 2.10.
 
 \subsection{Training}
 
-The model is trained on a dataset composed of 100 graphs per category (700 in total). Early stopping is applied based on a validation set (20 graphs per category, 140 in total) with a patience of 50 epochs. We enforce a minimum number of epochs, as the training phase is initially unstable due to the termination network, which is slower to converge. Training takes a couple of hours on a CPU/GPU setup (Intel Core i7-12700K / RTX 4060 Ti)
+The model is trained on 700 graphs in total, composed of 100 graphs from each of the seven graph families. Validation is performed on 140 graphs, with 20 graphs sampled from each family.
+
+Early stopping is applied based on validation performance, with a patience of 50 epochs. A minimum number of epochs is enforced because the early stages of training are unstable, mainly due to the termination network, which tends to converge more slowly than the other prediction tasks.
+
+Training takes a few hours on a CPU/GPU setup (Intel Core i7-12700K / RTX 4060 Ti).
 
 \subsection{Evaluation}
 
-The model is evaluated on 20 unseen random graphs with varying numbers of nodes. Increasing the number of nodes allows us to assess how well the model has learned the algorithms, i.e., whether it is able to generalise the algorithmic reasoning.
+Evaluation is performed on 20 unseen random graphs with varying numbers of nodes (20, 50 and 100 nodes). Increasing the number of nodes allows us to assess how well the model has learned the algorithms, i.e., whether it is able to generalise algorithmic reasoning.
 
 \section{Results}
 
-In this section, we compare the results of our implementation with those reported in the original paper.
+This section compares the results obtained by the repository with the results reported in the original paper.
 
 \subsection{BFS}
 
@@ -221,9 +231,9 @@ Repository
 
 \subsection{Details}
 
-The framework requires algorithms to be Markovian processes, i.e., the next state depends only on the current state. Algorithms such as DFS are non-Markovian and cannot be trained in this framework. Dijkstra's algorithm can be reformulated in a Markovian way by augmenting the node features with a visited state, but this would significantly increase the complexity of the code (the same limitation applies to DFS algorithm)
+The framework requires algorithms to be Markovian processes, i.e., the next state depends only on the current state. Algorithms such as DFS are not directly Markovian under a simple state representation and therefore cannot be trained in this framework without additional state information. Dijkstra's algorithm can be reformulated in a Markovian way by augmenting the node features with a visited state, but this would significantly increase the complexity of the implementation.
 
-A natural extension of the framework is the connected components algorithm (CC), which can be formulated as a Markovian process as follows:
+A natural extension of the framework is the Connected Components algorithm (CC), which can be formulated as a Markovian process as follows:
 
 \[
 \text{CC:} \quad x_i^{(1)} = i 
@@ -233,7 +243,7 @@ x_i^{(t+1)} = \min \left( x_i^{(t)}, \min_{j \in \mathcal{N}_i} x_j^{(t)} \right
 
 \subsection{Results}
 
-Connected components is an algorithm closely related to BFS, so strong results are expected. It can be interpreted as a multi-source BFS. Unlike the original paper, which primarily focuses on connected graphs, it has been tested on sparser graphs with multiple components to fully assess the performance of the algorithm.
+Connected Components is closely related to BFS, so strong results are expected. It can be interpreted as a multi-source BFS. Unlike the original paper, which primarily focuses on connected graphs, the algorithm has been tested on sparser graphs with multiple components to fully assess the performance of the algorithm.
 
 \begin{table}[H]
 \centering
@@ -253,9 +263,9 @@ Repository
 
 \section{Comments}
 
-The termination prediction is the most challenging component of the model and yields the least satisfactory results (it has been dropped in the follow-up work~\cite{velickovic2022clrs}).
+The termination prediction is the most challenging component of the model and gives the least satisfactory results (this component was dropped in the follow-up work~\cite{velickovic2022clrs}).
 
-Overall, the model successfully captures simple algorithmic patterns (e.g. BFS), but performance degrades on more complex tasks (e.g. Bellman-Ford, Prim), especially as graph size increases. In particular, there is a lack of precision in the predicted distances, which is partially masked by the use of an MSE loss that does not penalise small but structurally incorrect deviations.
+Overall, the model successfully captures simple algorithmic patterns (e.g. BFS), but performance degrades on more complex tasks (e.g. Bellman-Ford, Prim), especially as graph size increases. In particular, the predicted distances lack precision, which is partially masked by the use of an MSE loss, as it does not strongly penalise small but structurally incorrect deviations.
 
 \bibliographystyle{unsrt}
 \bibliography{references}
